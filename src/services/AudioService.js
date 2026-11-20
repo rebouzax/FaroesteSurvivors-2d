@@ -1,4 +1,9 @@
 import {t} from "./I18n.js";
+import clips from '../assets/audio/combat-foley.json' with { type: 'json' };
+import { RunAudio } from './RunAudio.js';
+
+const COMBAT_BANK = new URL('../assets/audio/combat-foley.wav', import.meta.url);
+const MAX_VOICES = 15;
 const FILES = {
   dog: new URL("../assets/audio/chupacabra.wav", import.meta.url),
   vulture: new URL("../assets/audio/vulture.wav", import.meta.url),
@@ -11,6 +16,7 @@ const FILES = {
   purchase: new URL("../assets/audio/purchase.wav", import.meta.url),
   hurt: new URL("../assets/audio/hurt.wav", import.meta.url),
 };
+const FALLBACK = { shotgun: 'shot', rifle: 'shot', marshalShot: 'shot', crossbow: 'arrow', axe: 'arrow', throw: 'arrow' };
 const MUSIC = {
   menu: new URL("../assets/audio/the-unmarked-cabin.mp3", import.meta.url),
   desert: new URL("../assets/audio/seven-black-graves.mp3", import.meta.url),
@@ -21,13 +27,15 @@ export class AudioService {
     this.enabled = true;
     this.musicEnabled = true;
     this.ctx = null;
-    this.buffers = {};
+    this.buffers = Object.create(null);
     this.track = "menu";
     this.musicSource = null;
     this.musicTracks = new Map();
     this.musicUnlocked = false;
     this.fireSource = null;
-    this.active = new Set();
+    this.active = new Map();
+    this.lastTake = Object.create(null);
+    this.runAudio = new RunAudio((event, options) => this.play(event, options));
     this.paused = false;
     this.disposed = false;
     this.loading = null;
@@ -41,12 +49,19 @@ export class AudioService {
         const Context = window.AudioContext || window.webkitAudioContext;
         if (!Context) throw new Error("Este navegador não oferece Web Audio.");
         this.ctx = new Context();
+        const limiter = this.ctx.createDynamicsCompressor();
+        limiter.threshold.value = -16;
+        limiter.knee.value = 12;
+        limiter.ratio.value = 4;
+        limiter.attack.value = .003;
+        limiter.release.value = .13;
+        limiter.connect(this.ctx.destination);
         this.effectsGain = this.ctx.createGain();
         this.effectsGain.gain.value = 0.65;
-        this.effectsGain.connect(this.ctx.destination);
+        this.effectsGain.connect(limiter);
         this.uiGain = this.ctx.createGain();
-        this.uiGain.gain.value = 0.65;
-        this.uiGain.connect(this.ctx.destination);
+        this.uiGain.gain.value = this.enabled ? 0.65 : 0;
+        this.uiGain.connect(limiter);
         this.setPaused(this.paused);
         this.ctx.onstatechange = () => {
           if (!this.disposed && this.ctx.state === "running") {
@@ -62,12 +77,13 @@ export class AudioService {
       // into large in-memory AudioBuffers on phones.
       this.musicUnlocked = true;
       this.syncMusic();
-      if (!this.loading && (!this.loadAttempted || retry)) {
+      if (this.enabled && !this.loading && (!this.loadAttempted || retry)) {
         this.loadAttempted = true;
         this.loading = this.loadFiles().finally(() => {
           this.loading = null;
         });
       }
+      if (this.track === 'desert') this.prepareCombat(retry);
       await resumed;
       await this.loading;
       if (this.disposed) return false;
@@ -80,39 +96,48 @@ export class AudioService {
     }
   }
   async loadFiles() {
-    await Promise.all(
-      Object.entries(FILES).map(async ([key, url]) => {
-        if (this.buffers[key]) return;
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 15000);
-        try {
-          const response = await fetch(url, { signal: controller.signal });
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          const buffer = await this.ctx.decodeAudioData(
-            await response.arrayBuffer(),
-          );
-          if (this.disposed) return;
-          this.buffers[key] = buffer;
-          this.failures.delete(key);
-          // Start available tracks without waiting for unrelated files.
-          this.syncMusic();
-          this.setFire(this.fireActive);
-        } catch (error) {
-          this.failures.set(key, error.message);
-          console.warn(`Falha ao carregar áudio ${key}: ${url}`, error);
-        } finally {
-          clearTimeout(timeout);
-        }
-      }),
-    );
+    await Promise.all(Object.entries(FILES).map(([key, url]) => this.loadBuffer(key, url)));
+  }
+  async loadBuffer(key, url) {
+    if (this.buffers[key]) return;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    try {
+      const response = await fetch(url, { signal: controller.signal });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const buffer = await this.ctx.decodeAudioData(await response.arrayBuffer());
+      if (this.disposed) return;
+      this.buffers[key] = buffer;
+      this.failures.delete(key);
+      if (key === 'fire') this.setFire(this.fireActive);
+    } catch (error) {
+      if (!this.disposed) {
+        this.failures.set(key, error.message);
+        console.warn(`Falha ao carregar áudio ${key}: ${url}`, error);
+      }
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  prepareCombat(retry = false) {
+    if (!this.ctx || !this.enabled || this.disposed || this.buffers.combat || this.combatLoading) return this.combatLoading;
+    if (this.combatAttempted && !retry) return;
+    this.combatAttempted = true;
+    this.combatLoading = this.loadBuffer('combat', COMBAT_BANK).finally(() => { this.combatLoading = null; });
+    return this.combatLoading;
+  }
+  updateRun(run, dt) {
+    if (this.enabled && !this.paused) this.runAudio.update(run, dt);
+    this.setFire(run.phase === 'playing' && (run.fires.length > 0 || run.bossHazards.length > 0));
   }
   async test(lang='en') {
     const running = await this.unlock({ retry: true });
     if (!running) return t(lang,'audioBlocked');
     if (!this.enabled) return t(lang,'audioDisabled');
-    if (!this.buffers.shot)
+    await this.prepareCombat(true);
+    if (!this.buffers.shot && !this.buffers.combat)
       return t(lang,'audioUnavailable');
-    this.play("shot");
+    this.play("shot", { ui: true });
     return this.failures.size
       ? t(lang,'audioPartial',{count:this.failures.size})
       : t(lang,'audioSuccess');
@@ -132,25 +157,82 @@ export class AudioService {
     source.start();
     return source;
   }
-  play(type, { ui = false } = {}) {
+  play(type, { ui = false, gain = 1, pan = 0, pitch = 1, muffled = 0, priority = 1 } = {}) {
     if (
       type === "fire" ||
-      !this.enabled ||
-      (this.paused && !ui) ||
-      this.active.size >= 16
+      !this.enabled || this.disposed || gain < .035 || this.ctx?.state !== "running" ||
+      (this.paused && !ui)
     )
       return;
-    const source = this.source(type, ui ? this.uiGain : this.effectsGain);
-    if (!source) return;
-    this.active.add(source);
-    source.onended = () => {
+    const choices = this.buffers.combat && Object.hasOwn(clips, type) && clips[type];
+    const buffer = choices ? this.buffers.combat : this.buffers[FALLBACK[type] || type];
+    if (!buffer) return;
+    if (this.active.size >= MAX_VOICES) {
+      let disposable;
+      let lowestPriority = priority;
+      for (const voice of this.active.values()) {
+        if (voice.priority < lowestPriority) {
+          lowestPriority = voice.priority;
+          disposable = voice;
+        }
+      }
+      if (!disposable) return;
+      disposable.stop(true);
+    }
+    const source = this.ctx.createBufferSource();
+    source.buffer = buffer;
+    const variation = choices ? .965 + Math.random() * .07 : 1;
+    source.playbackRate.value = pitch * variation;
+    const volume = this.ctx.createGain();
+    volume.gain.value = Math.min(1.2, gain);
+    const chain = [source];
+    if (muffled > .15) {
+      const air = this.ctx.createBiquadFilter();
+      air.type = 'lowpass';
+      air.frequency.value = 15000 - 12400 * Math.min(1, muffled);
+      air.Q.value = .2;
+      chain.push(air);
+    }
+    if (pan && this.ctx.createStereoPanner) {
+      const balance = this.ctx.createStereoPanner();
+      balance.pan.value = pan;
+      chain.push(balance);
+    }
+    chain.push(volume);
+    const bus = ui ? this.uiGain : this.effectsGain;
+    for (let i = 0; i < chain.length; i++) chain[i].connect(chain[i + 1] || bus);
+    const cleanup = () => {
       this.active.delete(source);
-      source.disconnect();
+      source.onended = null;
+      for (const node of chain) node.disconnect();
     };
+    this.active.set(source, {
+      priority: ui ? 3 : priority,
+      stop: (fade = false) => {
+        if (fade) {
+          this.active.delete(source);
+          const now = this.ctx.currentTime;
+          volume.gain.setTargetAtTime(0, now, .004);
+          source.stop(now + .018);
+        } else {
+          source.stop();
+          cleanup();
+        }
+      },
+    });
+    source.onended = cleanup;
+    if (choices) {
+      let take = Math.floor(Math.random() * choices.length);
+      if (take === this.lastTake[type] && choices.length > 1) take = (take + 1) % choices.length;
+      this.lastTake[type] = take;
+      source.start(0, ...choices[take]);
+    } else source.start();
   }
   setMusic(track) {
+    const changed = this.track !== track;
     this.track = track;
     this.syncMusic();
+    if (track === 'desert') this.prepareCombat(changed);
   }
   syncMusic() {
     const desired = this.musicEnabled ? this.track : null;
@@ -179,11 +261,13 @@ export class AudioService {
       this.musicSource = this.musicTracks.get(desired);
       this.playingTrack = desired;
     }
-    if (!this.musicSource) return;
-    this.musicSource.volume = this.paused ? 0.12 : 0.42;
-    if (this.musicSource.paused)
-      this.musicSource.play().catch((error) => {
-        if (!this.disposed) console.warn("Música aguarda interação do usuário.", error);
+    const source = this.musicSource;
+    if (!source) return;
+    source.volume = this.paused ? 0.12 : 0.42;
+    if (source.paused)
+      source.play().catch((error) => {
+        if (!this.disposed && this.musicSource === source && error.name !== "AbortError")
+          console.warn("Não foi possível reproduzir a música.", error);
       });
   }
   updateMusicLoop() {
@@ -217,18 +301,18 @@ export class AudioService {
     if (paused) this.setFire(false);
   }
   setPreferences(sound, music) {
+    const wasEnabled = this.enabled;
     this.enabled = sound;
     this.musicEnabled = music;
     this.setPaused(this.paused);
+    if (this.ctx) this.uiGain.gain.setTargetAtTime(sound ? .65 : 0, this.ctx.currentTime, .035);
     if (!sound) this.setFire(false);
+    if (sound && !wasEnabled && this.ctx) this.unlock({ retry: true });
     this.syncMusic();
   }
   stopEffects() {
-    for (const source of this.active) {
-      source.stop();
-      source.disconnect();
-    }
-    this.active.clear();
+    for (const voice of this.active.values()) voice.stop();
+    this.runAudio.run = null;
     this.setFire(false);
   }
   suspend() {

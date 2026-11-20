@@ -101,7 +101,7 @@ export function abilityStats(id, level) {
 }
 export function cardDescription(id, nextLevel, attackRate = 1) {
   const stats = abilityStats(id, nextLevel);
-  if(id==='doubleShot')return `+${stats.count} projéteis da arma principal por ataque, lançados em sequência (máximo +6). Não afeta golpes corpo a corpo.`;
+  if(id==='doubleShot')return `+${stats.count} por ataque de chicote, disparo ou arremesso. Os extras saem em sequência em outras direções.`;
   if (id === "pistol")
     return `${stats.damage} de dano · um tiro a cada ${Math.max(0.15, stats.cooldown / attackRate).toFixed(2)} s.`;
   if (id === "molotov")

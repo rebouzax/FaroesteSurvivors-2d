@@ -1,8 +1,8 @@
 import { CAMPAIGN, missionId } from "../config/campaignConfig.js";
 
 export class MissionSystem {
-  update(run, killed = [], dt = 1/60) {
-    if (run.phase !== "playing") return;
+  update(run, killed = []) {
+    if (run.phase !== "playing" && run.phase !== "upgrade") return;
     // Keep objective timers fair while normal waves are paused for a boss.
     if (run.bossEncounter.active) {
       // RunSystem already freezes run.time, including the objective deadline.

@@ -1,6 +1,8 @@
 import { CONFIG } from "../config/gameConfig.js";
 import { AXE_THROWERS } from '../config/enemyWeapons.js';
 import { nearbyProps, pushOut } from './SceneryCollision.js';
+import { EnemyCrowd, enemyBodyRadius } from './EnemyCrowd.js';
+import { EnemyNavigation, sceneryBlocksPath } from './EnemyNavigation.js';
 import { FRONTIER_ENEMIES } from "../config/frontierExpansion.js";
 import { enemyStats } from "../config/abilityConfig.js";
 import { ENEMY_STAGE_GROUPS } from "../config/campaignConfig.js";
@@ -8,16 +10,28 @@ import { EARLY_ENEMIES } from "../config/earlyEnemies.js";
 const clamp = (value) =>
   Math.max(-CONFIG.mapHalf + 1, Math.min(CONFIG.mapHalf - 1, value));
 const RANGED_ENEMIES = new Set(["bellRinger","lanternThief","windmillWraith","drownedProspector","barBanshee","railWitch","graveRider","sundownBandit",...Object.keys(FRONTIER_ENEMIES).filter(id=>FRONTIER_ENEMIES[id].behavior==="ranged")]);
-const CELL = 2.5;
-const cellKey = (x,z) => `${Math.floor(x/CELL)},${Math.floor(z/CELL)}`;
+const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 const tacticFor = type => EARLY_ENEMIES[type]?.behavior || (RANGED_ENEMIES.has(type)||type==="skeleton" ? "ranged" : FRONTIER_ENEMIES[type]?.behavior||"chase");
+
 export class EnemySystem {
+  constructor() {
+    this.navigation = new EnemyNavigation();
+  }
+
   nearbyProps(run,x,z){
     return nearbyProps(run,x,z);
   }
-  keepOutOfProps(run,enemy){
-    let blocked=false;
-    for(let pass=0;pass<3;pass++)for(const prop of this.nearbyProps(run,enemy.x,enemy.z))blocked=pushOut(enemy,prop,enemy.treasure?.85:enemy.bossId?1:.4)||blocked;
+  keepOutOfProps(run, enemy) {
+    const radius = enemy.treasure ? .85 : enemy.bossId ? 1 : .4;
+    let blocked = false;
+    for (let pass = 0; pass < 3; pass++) {
+      let moved = false;
+      for (const prop of this.nearbyProps(run, enemy.x, enemy.z)) moved = pushOut(enemy, prop, radius) || moved;
+      if (!moved) break;
+      blocked = true;
+    }
+    enemy.x = clamp(enemy.x);
+    enemy.z = clamp(enemy.z);
     return blocked;
   }
   spawnForStage(run) {
@@ -39,16 +53,35 @@ export class EnemySystem {
       z: 0,
       hitFlash: 0,
     };
-    this.position(run, enemy);
-    run.enemies.push(enemy);
+    if (this.position(run, enemy)) run.enemies.push(enemy);
   }
   position(run, enemy) {
-    const angle = run.random() * Math.PI * 2;
-    enemy.x = clamp(run.player.x + Math.cos(angle) * 33);
-    enemy.z = clamp(run.player.z + Math.sin(angle) * 33);
-    if (Math.hypot(enemy.x - run.player.x, enemy.z - run.player.z) < 24) {
-      enemy.x = clamp(run.player.x - Math.cos(angle) * 33);
-      enemy.z = clamp(run.player.z - Math.sin(angle) * 33);
+    const bearing = run.random() * Math.PI * 2 + enemy.id * GOLDEN_ANGLE;
+    const radius = enemyBodyRadius(enemy);
+    for (let attempt = 0; attempt < 14; attempt++) {
+      const angle = bearing + attempt * GOLDEN_ANGLE;
+      const distance = 30 + (enemy.id + attempt * 3) % 8 + Math.floor(attempt / 5) * 6;
+      const candidate = {
+        x: clamp(run.player.x + Math.cos(angle) * distance),
+        z: clamp(run.player.z + Math.sin(angle) * distance),
+      };
+      if (Math.hypot(candidate.x - run.player.x, candidate.z - run.player.z) < 24) continue;
+      if (this.nearbyProps(run, candidate.x, candidate.z).some(prop => pushOut({ ...candidate }, prop, .65))) continue;
+      if (run.enemies.some(other => other !== enemy && other.hp > 0 &&
+        Math.hypot(candidate.x - other.x, candidate.z - other.z) < radius + enemyBodyRadius(other) + 1.2)) continue;
+      Object.assign(enemy, candidate);
+      return true;
+    }
+    return false;
+  }
+  separate(run) {
+    const move = (enemy, dx, dz) => {
+      enemy.x = clamp(enemy.x + dx);
+      enemy.z = clamp(enemy.z + dz);
+      this.keepOutOfProps(run, enemy);
+    };
+    for (let pass = 0; pass < 3; pass++) {
+      if (!new EnemyCrowd(run.enemies).resolve(run.enemies, move)) break;
     }
   }
   update(run, dt) {
@@ -63,8 +96,12 @@ export class EnemySystem {
           const approach=distance>preferred+1?1:distance<preferred-1&&ranged?-.55:0;
           const orbit=distance<10?(boss.id%2?1:-1)*(.32+(boss.phase||1)*.12):0;
           const pace=boss.speed*(1+((boss.phase||1)-1)*.1);
-          boss.x=clamp(boss.x+(dx/distance*approach-dz/distance*orbit)*pace*dt);
-          boss.z=clamp(boss.z+(dz/distance*approach+dx/distance*orbit)*pace*dt);
+          const heading = this.navigation.steer(run, boss, {
+            x: dx / distance * approach - dz / distance * orbit,
+            z: dz / distance * approach + dx / distance * orbit,
+          }, dt, .94);
+          boss.x = clamp(boss.x + heading.x * pace * dt);
+          boss.z = clamp(boss.z + heading.z * pace * dt);
         }
         boss.hitFlash = Math.max(0,boss.hitFlash-dt);
         this.keepOutOfProps(run,boss);
@@ -79,10 +116,15 @@ export class EnemySystem {
       for(const minion of run.enemies){
         if(!minion.summoned||minion.hp<=0)continue;
         const dx=run.player.x-minion.x,dz=run.player.z-minion.z,d=Math.hypot(dx,dz);
-        if(d>.1){minion.x+=dx/d*minion.speed*dt;minion.z+=dz/d*minion.speed*dt;}
+        if (d > .1) {
+          const heading = this.navigation.steer(run, minion, { x: dx / d, z: dz / d }, dt);
+          minion.x += heading.x * minion.speed * dt;
+          minion.z += heading.z * minion.speed * dt;
+        }
         this.keepOutOfProps(run,minion);
         minion.hitFlash=Math.max(0,minion.hitFlash-dt);
       }
+      this.separate(run);
       this.updateShots(run,dt);
       return;
     }
@@ -147,15 +189,7 @@ export class EnemySystem {
       if(run.specialSpawnTimer<=0){run.specialSpawnTimer=Math.max(2.4,7.5-minute*.22);
         this.spawnForStage(run);}
     }
-    // Local separation avoids a quadratic all-enemies scan and keeps packs
-    // from collapsing into one silhouette at high wave counts.
-    const grid=new Map();
-    for(const enemy of run.enemies){
-      if(enemy.hp<=0||enemy.type==="vulture")continue;
-      const key=cellKey(enemy.x,enemy.z);
-      if(!grid.has(key))grid.set(key,[]);
-      grid.get(key).push(enemy);
-    }
+    const crowd = new EnemyCrowd(run.enemies);
     for (const enemy of run.enemies) {
       if(enemy.treasure)continue;
       enemy.throwRelease=Math.max(0,(enemy.throwRelease||0)-dt);
@@ -168,7 +202,6 @@ export class EnemySystem {
         }
         enemy.x += enemy.vx * dt;
         enemy.z += enemy.vz * dt;
-        this.keepOutOfProps(run,enemy);
         continue;
       }
       let dx = run.player.x - enemy.x,
@@ -180,72 +213,45 @@ export class EnemySystem {
         dz = run.player.z - enemy.z;
         distance = Math.hypot(dx, dz);
       }
-      const role=tacticFor(enemy.type);
-      if(role==="charge"||role==="orbit"){
-        enemy.chargeTimer=(enemy.chargeTimer??(1.5+enemy.id%3))-dt;
-        if(enemy.chargeTimer<=0&&!enemy.charge&&distance<13&&distance>2){
-          const lead=run.player.moving?Math.min(1.2,run.moveSpeed*.24):0;
-          const tx=run.player.x+run.player.dx*lead,tz=run.player.z+run.player.dz*lead;
-          const angle=Math.atan2(tz-enemy.z,tx-enemy.x),speed=role==="charge"?8:6.7;
-          enemy.charge={vx:Math.cos(angle)*speed,vz:Math.sin(angle)*speed,
-            left:role==="charge" ? .7 : .48,warning:role==="charge" ? .7 : .5};
-          enemy.chargeTimer=role==="charge"?4.6:5.1;
-          enemy.attackFlash=.65;
-        }
-        if(enemy.charge){
-          const c=enemy.charge;
-          const warningBefore=c.warning;
-          c.warning=Math.max(0,c.warning-dt);
-          const travelDt=Math.max(0,dt-warningBefore);
-          if(c.warning<=0){
-            enemy.x=clamp(enemy.x+c.vx*travelDt);enemy.z=clamp(enemy.z+c.vz*travelDt);
-            c.left-=travelDt;
-            if(this.keepOutOfProps(run,enemy)||c.left<=0)enemy.charge=null;
-          }
-          enemy.hitFlash=Math.max(0,enemy.hitFlash-dt);
-          enemy.attackFlash=Math.max(0,(enemy.attackFlash||0)-dt);
-          continue;
-        }
-      }
+      const role = tacticFor(enemy.type);
+      const hound = enemy.type === 'dog';
+      const ranged = role === 'ranged';
+      const range = enemy.type === 'skeleton' ? 17 : 19;
+      const hasSight = !ranged || (distance < range + 3 && this.navigation.seesPlayer(run, enemy, dt));
+      if ((hound || role === 'charge' || role === 'orbit') && this.charge(run, enemy, role, distance, dt)) continue;
       if (distance > 0.05) {
-        const approach=role==="ranged"?(distance<7?-1:distance<11?0:1):role==="orbit"&&distance<4 ? .4 : 1;
-        const orbit=distance<12?(enemy.id%2?1:-1)*(role==="orbit"?1.1:role==="ranged" ? .52 : .22):0;
-        let steerX=dx/distance*approach-dz/distance*orbit;
-        let steerZ=dz/distance*approach+dx/distance*orbit;
-        const cx=Math.floor(enemy.x/CELL),cz=Math.floor(enemy.z/CELL);
-        for(let ox=-1;ox<=1;ox++)for(let oz=-1;oz<=1;oz++){
-          for(const other of grid.get(`${cx+ox},${cz+oz}`)||[]){
-            if(other===enemy)continue;
-            const awayX=enemy.x-other.x,awayZ=enemy.z-other.z,square=awayX*awayX+awayZ*awayZ;
-            if(square<=.0001){steerX+=enemy.id>other.id ? .55 : -.55;continue;}
-            if(square<2.25){steerX+=awayX/square*.36;steerZ+=awayZ/square*.36;}
-          }
+        const side = enemy.id % 2 ? 1 : -1;
+        const flank = Math.min(1, distance / 4, Math.max(0, (24 - distance) / 10));
+        const approach = ranged
+          ? distance < 7 ? -.85 : hasSight && distance < 11 ? 0 : .85
+          : role === 'orbit' && distance < 4 ? .4 : 1;
+        const orbit = side * flank * (role === 'orbit' ? 1.1 : ranged ? hasSight ? .48 : .95 : .24 + enemy.id % 7 * .065);
+        if (hound && run.player.moving) {
+          const lead = Math.min(2.8, Math.max(0, (distance - 3) * .23));
+          dx += run.player.dx * lead;
+          dz += run.player.dz * lead;
         }
-        for(const prop of this.nearbyProps(run,enemy.x,enemy.z)){
-          if(prop.halfX!=null){const probe={x:enemy.x,z:enemy.z};if(pushOut(probe,prop,1.1)){steerX+=(probe.x-enemy.x)*2;steerZ+=(probe.z-enemy.z)*2;}continue;}
-          const awayX=enemy.x-prop.x,awayZ=enemy.z-prop.z;
-          const space=Math.hypot(awayX,awayZ),boundary=(prop.radius||0)+.7;
-          if(space<boundary+1){
-            const factor=(boundary+1-space)/Math.max(.1,space);
-            steerX+=awayX*factor*1.25;
-            steerZ+=awayZ*factor*1.25;
-          }
-        }
+        const norm = Math.max(.05, Math.hypot(dx, dz));
+        const heading = crowd.steer(enemy, {
+          x: dx / norm * approach - dz / norm * orbit,
+          z: dz / norm * approach + dx / norm * orbit,
+        });
+        const { x: steerX, z: steerZ } = this.navigation.steer(run, enemy, heading, dt);
         const magnitude=Math.hypot(steerX,steerZ);
         if(magnitude>.01){
           const scale=enemy.speed/Math.max(1,magnitude);
           enemy.x=clamp(enemy.x+steerX*scale*dt);
           enemy.z=clamp(enemy.z+steerZ*scale*dt);
-          this.keepOutOfProps(run,enemy);
         }
+        this.keepOutOfProps(run, enemy);
       }
-      if(role==="ranged"&&enemy.hp>0){
-        const range=enemy.type==="skeleton"?17:19;
+      if(ranged && enemy.hp > 0){
         if(enemy.aimTimer>0){
           enemy.aimTimer=Math.max(0,enemy.aimTimer-dt);
           if(enemy.aimTimer===0&&distance<range+3){
             const ax=enemy.aimX-enemy.x,az=enemy.aimZ-enemy.z,aimLength=Math.hypot(ax,az);
-            if(run.enemyShots.length<40&&aimLength>.01){
+            if(run.enemyShots.length<40 && aimLength>.01 &&
+              !sceneryBlocksPath(run, enemy.x, enemy.z, enemy.aimX, enemy.aimZ, .15)){
               const speed=enemy.type==="skeleton"?8:9;
               const kind=AXE_THROWERS.has(enemy.type)?'axe':'orb';
               run.enemyShots.push({x:enemy.x,z:enemy.z,vx:ax/aimLength*speed,vz:az/aimLength*speed,age:0,kind,damage:enemy.type==="skeleton"?enemy.damage:Math.ceil(enemy.damage*.55)});
@@ -253,7 +259,7 @@ export class EnemySystem {
             }
             enemy.attackFlash=.58;
           }
-        }else if(distance<range){
+        }else if(distance<range && hasSight){
           enemy.shotTimer=(enemy.shotTimer??(enemy.type==="skeleton"?1.3:1.8))-dt;
           if(enemy.shotTimer<=0){
             const lead=run.player.moving?Math.min(1.1,run.moveSpeed*.19):0;
@@ -276,6 +282,7 @@ export class EnemySystem {
       }
       enemy.hitFlash = Math.max(0, enemy.hitFlash - dt);
     }
+    this.separate(run);
     // A charge never follows or teleports back to João. It leaves the arena.
     run.enemies = run.enemies.filter(
       (enemy) => enemy.type !== "vulture" || enemy.hp <= 0 || enemy.age < 10,
@@ -296,10 +303,48 @@ export class EnemySystem {
     }
     this.updateShots(run,dt);
   }
+
+  charge(run, enemy, role, distance, dt) {
+    const hound = enemy.type === 'dog';
+    enemy.chargeTimer = (enemy.chargeTimer ?? (1.5 + enemy.id % 3)) - dt;
+    if (!enemy.charge && enemy.chargeTimer <= 0 && distance > 2.2 && distance < (hound ? 8.5 : 13)) {
+      const player = run.player;
+      const lead = player.moving ? Math.min(hound ? 1.9 : 1.2, run.moveSpeed * .34) : 0;
+      const angle = Math.atan2(player.z + player.dz * lead - enemy.z, player.x + player.dx * lead - enemy.x);
+      const vx = Math.cos(angle), vz = Math.sin(angle);
+      const speed = hound ? 8.8 : role === 'charge' ? 8 : 6.7;
+      const duration = hound ? .68 : role === 'charge' ? .7 : .48;
+      if (!sceneryBlocksPath(run, enemy.x, enemy.z, enemy.x + vx * speed * duration,
+        enemy.z + vz * speed * duration, .4)) {
+        enemy.charge = { vx: vx * speed, vz: vz * speed, left: duration, warning: hound ? .5 : role === 'charge' ? .7 : .5 };
+        enemy.chargeTimer = hound ? 4.1 + enemy.id % 4 * .18 : role === 'charge' ? 4.6 : 5.1;
+        enemy.attackFlash = .65;
+        if (hound) run.events.push('enemy-charge');
+      } else enemy.chargeTimer = .22;
+    }
+    const charge = enemy.charge;
+    if (!charge) return false;
+    const pending = charge.warning;
+    charge.warning = Math.max(0, pending - dt);
+    const travelDt = Math.max(0, dt - pending);
+    if (travelDt > 0) {
+      enemy.x = clamp(enemy.x + charge.vx * travelDt);
+      enemy.z = clamp(enemy.z + charge.vz * travelDt);
+      charge.left -= travelDt;
+      if (this.keepOutOfProps(run, enemy) || charge.left <= 0) enemy.charge = null;
+    }
+    enemy.hitFlash = Math.max(0, enemy.hitFlash - dt);
+    enemy.attackFlash = Math.max(0, (enemy.attackFlash || 0) - dt);
+    return true;
+  }
+
   updateShots(run,dt){
     run.enemyShots = run.enemyShots.filter(shot => {
-      shot.x += shot.vx * dt;
-      shot.z += shot.vz * dt;
+      const x = shot.x + shot.vx * dt;
+      const z = shot.z + shot.vz * dt;
+      if (sceneryBlocksPath(run, shot.x, shot.z, x, z, .14)) return false;
+      shot.x = x;
+      shot.z = z;
       shot.age += dt;
       const player = run.player;
       if (Math.hypot(shot.x-player.x,shot.z-player.z) < 0.63) {
@@ -323,7 +368,8 @@ export class EnemySystem {
     const targetX = run.player.x,
       targetZ = run.player.z;
     for (let i = 0; i < 6; i++) {
-      const offset = (i - 2.5) * 1.4;
+      const offset = (i - 2.5) * 2.6;
+      const approach = 26 + Math.floor(i / 2) * 3.4;
       run.enemies.push({
         id: ++run.nextId,
         type: "vulture",
@@ -333,8 +379,8 @@ export class EnemySystem {
         armor: 0,
         speed: 10,
         xp: 10,
-        x: targetX - dx * 26 - dz * offset,
-        z: targetZ - dz * 26 + dx * offset,
+        x: targetX - dx * approach - dz * offset,
+        z: targetZ - dz * approach + dx * offset,
         vx: dx * 10,
         vz: dz * 10,
         targetX,

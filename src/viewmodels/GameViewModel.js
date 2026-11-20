@@ -19,10 +19,7 @@ export class GameViewModel {
   update(dt, input) {
     if (this.paused) return;
     this.system.update(this.model, dt, input);
-    for (const event of this.model.events) this.audio.play(event);
-    this.audio.setFire(
-      this.model.phase === "playing" && (this.model.fires.length > 0 || this.model.bossHazards.length > 0),
-    );
+    this.audio.updateRun(this.model, dt);
     if (["victory", "defeat"].includes(this.model.phase)) this.settle();
   }
   settle() {

@@ -24,6 +24,7 @@ export class InputService {
             "ArrowRight",
           ].includes(e.code)
         ) {
+          if (!canMove()) return;
           e.preventDefault();
           this.keys.add(e.code);
         }

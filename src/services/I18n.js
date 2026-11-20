@@ -386,6 +386,6 @@ export function localizedCardDescription(language,id,level,attackRate=1){
     radius:stats.radius?.toFixed(1),duration:stats.duration?.toFixed(2)};
   return t(language,(id==='heart'?'health':id)+'Desc',values);
 }
-Object.assign(pt, {'ability.doubleShot':'Disparo Duplicado',doubleShotDesc:'+{count} projéteis por ataque da arma principal, lançados em sequência (máximo +6). Não afeta golpes corpo a corpo.'});
-Object.assign(en, {'ability.doubleShot':'Duplicate Shot',doubleShotDesc:'+{count} primary weapon projectiles per attack, fired in sequence (maximum +6). Does not affect melee strikes.'});
-Object.assign(es, {'ability.doubleShot':'Disparo Duplicado',doubleShotDesc:'+{count} proyectiles por ataque principal, lanzados en secuencia (máximo +6). No afecta golpes cuerpo a cuerpo.'});
+Object.assign(pt, {'ability.doubleShot':'Disparo Duplicado',doubleShotDesc:'+{count} por ataque de chicote, disparo ou arremesso. Os extras saem em sequência em outras direções.'});
+Object.assign(en, {'ability.doubleShot':'Duplicate Shot',doubleShotDesc:'+{count} per whip strike, shot or throw. Extra attacks follow in sequence in other directions.'});
+Object.assign(es, {'ability.doubleShot':'Disparo Duplicado',doubleShotDesc:'+{count} por latigazo, disparo o lanzamiento. Los ataques extra salen en secuencia en otras direcciones.'});

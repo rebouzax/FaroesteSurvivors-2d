@@ -99,7 +99,7 @@ export class RunSystem {
       }
     }
     this.collect(run, dt);
-    this.missions.update(run,killed,dt);
+    this.missions.update(run,killed);
   }
   move(run, dt, input) {
     const p = run.player, oldX = p.x, oldZ = p.z;
@@ -115,8 +115,9 @@ export class RunSystem {
       p.x=clamp(p.x+moveX*run.moveSpeed*dt/steps);p.z=clamp(p.z+moveZ*run.moveSpeed*dt/steps);
       for(let pass=0;pass<3;pass++)for(const prop of nearbyProps(run,p.x,p.z))pushOut(p,prop,.4);
     }
-    p.moving = Math.hypot(p.x - oldX, p.z - oldZ) > 0.001;
-    if (p.moving) p.walkTime += dt;
+    const distance = Math.hypot(p.x - oldX, p.z - oldZ);
+    p.moving = distance > .001;
+    if (p.moving) p.travel += distance;
   }
   drop(run, x, z, type, value) {
     if (run.loot.length >= CONFIG.maxLoot) {

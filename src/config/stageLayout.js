@@ -1,4 +1,3 @@
-import {SUPPLIED_ASSETS} from './suppliedAssets.js';
 // Keep the original procedural floors. Flattened GLB tiles contain overlapping
 // faces and caused depth flicker in all three stages that used this technique.
 export const STAGE_TERRAIN={};
@@ -13,7 +12,6 @@ const THEMES={
 export function stageLayout(stage){
  const placements=[];
  const add=(assetId,x,z,width,rotation=0,flat=false)=>{
-  if(!SUPPLIED_ASSETS[assetId])throw Error('Unknown scenery: '+assetId);
   placements.push({assetId,x,z,width,rotation,flat,radius:flat?0:width*Math.SQRT1_2});
  };
  const ids=THEMES[stage];if(!ids)return null;

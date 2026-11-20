@@ -54,7 +54,7 @@ export class RunModel {
       level: 1,
       xp: 0,
       moving: false,
-      walkTime: 0,
+      travel: 0,
     };
     this.enemies = [];
     this.loot = [];
@@ -106,7 +106,8 @@ export class RunModel {
     this.pulses = [];
     this.projectiles = [];
     this.primaryShots = [];
-    this.pendingPrimaryShots = [];
+    this.pendingCopies = [];
+    this.whipEchoes = [];
     this.primaryFlash = 0;
     this.bottles = [];
     this.fires = [];

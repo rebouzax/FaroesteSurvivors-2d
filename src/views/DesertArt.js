@@ -1,7 +1,11 @@
-import { CanvasTexture, NearestFilter, SRGBColorSpace } from 'three';
-import spritesUrl from '../assets/frontier-sprites.png';
-import propsUrl from '../assets/desert-sprites.png';
+import spritesUrl from '../assets/frontier-sprites.webp';
+import propsUrl from '../assets/desert-sprites.webp';
+import actorAnimationUrl from '../assets/desert-actor-animation.webp';
 import { CONFIG } from '../config/gameConfig.js';
+import { createDesertDressing, crossingZ, CROSSING_WIDTH, mailRoadX, MAIL_ROAD_WIDTH, washX, WASH_WIDTH } from '../models/DesertLayout.js';
+import { paintRavenFrames } from './DesertRavens.js';
+import { ENEMY_CELLS, ENEMY_FRAME_SIZE } from './EnemyAnimation.js';
+import { CHAMPION_CELLS } from './ChampionAnimation.js';
 
 const groups = [
   [spritesUrl, [
@@ -20,21 +24,39 @@ const load = async (url) => {
   await art.decode();
   return art;
 };
-export const pixelTexture = (canvas) => {
-  const texture = new CanvasTexture(canvas);
-  texture.colorSpace = SRGBColorSpace;
-  texture.magFilter = texture.minFilter = NearestFilter;
-  texture.generateMipmaps = false;
-  return texture;
-};
-
-let sharedArt;
-export function desertArt() {
+let sharedArt, sharedBattleArt;
+export function baseArt() {
   sharedArt ??= createArt().catch(error => {
-    sharedArt = null;
+    sharedArt = undefined;
     throw error;
   });
   return sharedArt;
+}
+
+export function desertArt() {
+  sharedBattleArt ??= Promise.all([baseArt(), load(actorAnimationUrl)]).then(([base, actorArt]) => {
+    const cell = ENEMY_FRAME_SIZE;
+    const rows = [...CHAMPION_CELLS.map(id => id + 'Pose'), ...ENEMY_CELLS];
+    const columns = 8;
+    if (actorArt.width !== columns * cell || actorArt.height !== rows.length * cell) {
+      throw new Error('Folha de animações do Deserto tem dimensões inválidas.');
+    }
+    const offsetY = base.atlas.height;
+    const atlas = raster(actorArt.width, offsetY + actorArt.height);
+    const ctx = atlas.getContext('2d');
+    ctx.drawImage(base.atlas, 0, 0);
+    ctx.drawImage(actorArt, 0, offsetY);
+    const frames = { ...base.frames };
+    rows.forEach((name, row) => {
+      for (let i = 0; i < columns; i++) frames[name + i] = { x: i * cell, y: offsetY + row * cell, w: cell, h: cell };
+    });
+    paintRavenFrames(ctx, frames, base.atlas.width + 5, 5);
+    return { atlas, frames, portraits: base.portraits };
+  }).catch(error => {
+    sharedBattleArt = undefined;
+    throw error;
+  });
+  return sharedBattleArt;
 }
 
 async function createArt() {
@@ -44,16 +66,18 @@ async function createArt() {
   const frames = {};
   const portraits = {};
   const sheets = await Promise.all(groups.map(([url]) => load(url)));
+  let index = 0;
+  const columns = 4;
   for (const [group, [, names, rows]] of groups.entries()) {
     const sheet = sheets[group];
     const source = raster(sheet.width, sheet.height).getContext('2d', { willReadFrequently: true });
     source.drawImage(sheet, 0, 0);
     for (const [i, name] of names.entries()) {
-      const col = i % 4, row = Math.floor(i / 4);
-      const x = Math.round(col * sheet.width / 4);
-      const y = rows?.[row] ?? Math.round(row * sheet.height / 4);
-      const w = Math.round((col + 1) * sheet.width / 4) - x;
-      const h = (rows?.[row + 1] ?? Math.round((row + 1) * sheet.height / 4)) - y;
+      const col = i % columns, row = Math.floor(i / columns);
+      const x = Math.round(col * sheet.width / columns);
+      const y = rows?.[row] ?? Math.round(row * sheet.height / columns);
+      const w = Math.round((col + 1) * sheet.width / columns) - x;
+      const h = (rows?.[row + 1] ?? Math.round((row + 1) * sheet.height / columns)) - y;
       const { data } = source.getImageData(x, y, w, h);
       let left = w, right = 0, top = h, bottom = 0;
       for (let py = 0; py < h; py++) {
@@ -65,8 +89,8 @@ async function createArt() {
       }
       const cw = right - left + 1, ch = bottom - top + 1;
       if (cw <= 0 || ch <= 0) throw new Error('Sprite vazio: ' + name);
-      const index = group * 16 + i;
       const ax = index % 8 * 64 + 2, ay = Math.floor(index / 8) * 64 + 2;
+      index++;
       const scale = 59 / Math.max(cw, ch);
       const aw = Math.round(cw * scale), ah = Math.round(ch * scale);
       ctx.drawImage(sheet, x + left, y + top, cw, ch, ax, ay, aw, ah);
@@ -78,76 +102,93 @@ async function createArt() {
     }
   }
   ctx.fillStyle = '#fff';
-  ctx.fillRect(509, 254, 2, 2);
-  frames.white = { x: 509, y: 254, w: 2, h: 2 };
+  ctx.fillRect(atlas.width - 3, atlas.height - 3, 2, 2);
+  frames.white = { x: atlas.width - 3, y: atlas.height - 3, w: 2, h: 2 };
   return { atlas, frames, portraits };
 }
 
-const palette = [
-  [32, 29, 43], [39, 33, 45], [45, 36, 46], [53, 40, 48], [60, 43, 47],
-  [66, 47, 47], [73, 52, 49], [81, 57, 51], [90, 64, 55], [100, 72, 59],
-  [109, 78, 62], [118, 85, 65], [134, 98, 71], [150, 111, 79],
-];
+const TEXELS = 4;
+const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 let terrain;
 export function desertFloor() {
   if (terrain) return terrain;
-  const side = CONFIG.mapHalf * 2;
-  const size = side * 5;
+  const size = CONFIG.mapHalf * 2 * TEXELS;
   const canvas = raster(size, size);
   const ctx = canvas.getContext('2d');
   const pixels = ctx.createImageData(size, size);
   const data = pixels.data;
-  const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
+  const axis = Array.from({ length: size }, (_, i) => i / TEXELS - CONFIG.mapHalf);
+  const crossings = Float32Array.from(axis, crossingZ);
+  const dunes = Float32Array.from(axis, x => Math.sin(x * .115) * 2.1 + Math.sin(x * .27) * .42);
   let seed = 1887;
   for (let row = 0; row < size; row++) {
-    const z = row / 5 - CONFIG.mapHalf;
-    const roadCenter = Math.sin(z * .047) * 12 + Math.sin(z * .12) * 3 - 6;
+    const z = axis[row], mail = mailRoadX(z), dryWash = washX(z);
+    const band = Math.sin(z * .092) * 2.2 + Math.sin(z * .27) * .67;
+    const rutWaver = Math.sin(z * .47) * .14;
     for (let col = 0; col < size; col++) {
-      const x = col / 5 - CONFIG.mapHalf;
+      const x = axis[col];
       seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
       const random = seed / 4294967296;
-      const mainRoad = Math.abs(x - roadCenter);
-      const sideRoad = Math.abs(z - 12 - 7 * Math.sin(x * .065) + x * .12);
-      const road = clamp(1 - Math.min(mainRoad / 7, sideRoad / 4.25) + (random - .5) * .16, 0, 1);
-      const ruts = mainRoad < 5.5 && Math.abs(mainRoad - 2.05) < .28 ? -.75 : 0;
-      const broad = Math.sin((x + z) * .23) + .67 * Math.sin(x * .42 - z * .16);
-      const detail = Math.sin(x * 1.29 + z * .39) * Math.cos(z * .86 - x * .23);
-      const ridge = Math.sin(z * .62 + Math.cos(x * .12) * 3) > .89 ? .32 : 0;
-      const edge = Math.min(1, (CONFIG.mapHalf - Math.max(Math.abs(x), Math.abs(z))) / 6);
-      const index = clamp(Math.floor((6.4 + 3.2 * road + broad * .8 + detail * .9 + ruts + ridge + (random - .5) * 2.5) * edge), 0, palette.length - 1);
+      const primary = Math.abs(x - mail);
+      const branch = Math.abs(z - crossings[col]);
+      const road = clamp((1 - Math.min(primary / MAIL_ROAD_WIDTH, branch / CROSSING_WIDTH)) * 1.88 + (random - .5) * .19, 0, 1);
+      const wash = clamp((1 - Math.abs(x - dryWash) / WASH_WIDTH) * 1.7, 0, 1) * (1 - road);
+      const wheel = Math.abs(primary - 1.93 - rutWaver) < .19 || Math.abs(branch - 1.45) < .14;
+      const dirt = Math.round((band + dunes[col]) * 1.8 + (random - .5) * (11 - road * 4));
+      const smallStone = wash > .15 && random > .96 ? 18 : 0;
+      const rut = wheel ? 9 : 0;
+      const edge = clamp((CONFIG.mapHalf - Math.max(Math.abs(x), Math.abs(z))) / 5, 0, 1);
       const offset = (row * size + col) * 4;
-      data.set(palette[index], offset);
+      data[offset] = 45 + edge * (31 + 35 * road - 11 * wash - rut + dirt + smallStone);
+      data[offset + 1] = 32 + edge * (17 + 25 * road - 4 * wash - rut * .73 + dirt * .69 + smallStone);
+      data[offset + 2] = 35 + edge * (11 + 12 * road + 6 * wash - rut * .39 + dirt * .48 + smallStone);
       data[offset + 3] = 255;
     }
   }
   ctx.putImageData(pixels, 0, 0);
+  paintHoofTracks(ctx);
   terrain = canvas;
   return terrain;
 }
 
+function paintHoofTracks(ctx) {
+  for (const crossing of [false, true]) {
+    const path = crossing ? crossingZ : mailRoadX;
+    for (let n = 0; n < 80; n++) {
+      if (n % 13 > 8) continue;
+      const coordinate = -111 + n * 2.85 + Math.sin(n * 1.67) * .18;
+      const tangent = (path(coordinate + .25) - path(coordinate - .25)) * 2;
+      const side = (n % 2 ? .52 : -.52) + (crossing ? .33 : .15);
+      const x = crossing ? coordinate : path(coordinate) + side;
+      const z = crossing ? path(coordinate) + side : coordinate;
+      for (let print = 0; print < 2; print++) {
+        const stride = print * .56;
+        const pixelX = Math.round((x + CONFIG.mapHalf + stride * (crossing ? 1 : tangent)) * TEXELS);
+        const pixelY = Math.round((z + CONFIG.mapHalf + stride * (crossing ? tangent : 1)) * TEXELS);
+        ctx.save();
+        ctx.translate(pixelX, pixelY);
+        ctx.rotate((crossing ? Math.atan2(tangent, 1) : Math.atan2(1, tangent)) + Math.PI / 2);
+        ctx.globalAlpha = print ? .36 : .52;
+        ctx.fillStyle = '#34242a';
+        ctx.fillRect(-1.5, -.75, 1, 2);
+        ctx.fillRect(.5, -.75, 1, 2);
+        ctx.fillRect(-.75, -1.75, 1.5, 1);
+        ctx.fillStyle = '#b68760';
+        ctx.fillRect(-1.25, 1.25, 2.5, .65);
+        ctx.restore();
+      }
+    }
+  }
+}
+
 export function desertDetails(props) {
-  const details = [
-    { x: -7, z: 5, name: 'campfire', width: 16 },
-    { x: -9, z: 3, name: 'tent', width: 61 },
-    { x: -3, z: 12, name: 'bones', width: 16 },
-    { x: 7, z: -3, name: 'grave', width: 28 },
-  ];
+  const details = createDesertDressing();
   for (const prop of props) {
-    const { type, x, z, size, radius, halfX, halfZ, assetId } = prop;
-    const name = assetId === 'waypost' ? 'waypost' : type !== 'visual-collider' ? type
-      : halfZ > .5 ? 'wagon' : halfX ? 'fence' : x % 2 ? 'telegraph' : 'grave';
-    const width = { wagon: 56, fence: 39, telegraph: 27, grave: 23, waypost: 26 }[name]
+    const { type, x, z, size, radius, visual, assetId } = prop;
+    const name = visual ?? assetId ?? type;
+    const width = prop.width ?? { wagon: 56, fence: 39, telegraph: 32, grave: 23, waypost: 26, tent: 61, tree: 33 }[name]
       ?? (type === 'rock' ? radius * 16 : 10 + size * 8);
     details.push({ x, z, name, width, flip: Math.sin(x) > 0 });
-  }
-  for (let i = 0; i < 575; i++) {
-    const x = Math.sin(i * 71.13 + 6) * 116, z = Math.cos(i * 37.71 + 3) * 116;
-    if (Math.abs(x - (Math.sin(z * .047) * 12 - 6)) < 4) continue;
-    const name = ['brush', 'brush', 'agave', 'brush', 'bones', 'agave'][i % 6];
-    details.push({ x, z, name, width: 6 + i % 11, flip: i % 2 });
-  }
-  for (const [x, z] of [[2, -16], [-27, 5], [-37, 28], [14, 24], [36, -21], [60, 43], [-54, -34]]) {
-    details.push({ x, z, name: 'tree', width: 33 });
   }
   return details;
 }
