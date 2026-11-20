@@ -1,0 +1,151 @@
+import { CONFIG } from "../config/gameConfig.js";
+import { nearbyProps, pushOut } from './SceneryCollision.js';
+import { TreasureSystem } from './TreasureSystem.js';
+import { EnemySystem } from "./EnemySystem.js";
+import { CombatSystem } from "./CombatSystem.js";
+import { MerchantSystem } from "./MerchantSystem.js";
+import { BossSystem } from "./BossSystem.js";
+import { CrateSystem } from "./CrateSystem.js";
+import { WeatherSystem } from "./WeatherSystem.js";
+import { MissionSystem } from "./MissionSystem.js";
+import { abilityStats } from "../config/abilityConfig.js";
+const clamp = (value) =>
+  Math.max(-CONFIG.mapHalf + 1, Math.min(CONFIG.mapHalf - 1, value));
+export class RunSystem {
+  constructor() {
+    this.enemies = new EnemySystem();
+    this.combat = new CombatSystem();
+    this.merchant = new MerchantSystem();
+    this.boss = new BossSystem();
+    this.crates = new CrateSystem();
+    this.weather = new WeatherSystem();
+    this.treasure = new TreasureSystem();
+    this.missions = new MissionSystem();
+  }
+  update(run, dt, input) {
+    run.events.length = 0;
+    if (run.phase === "intro") {
+      run.introTime = Math.min(CONFIG.intro, run.introTime + dt);
+      run.player.moving = false;
+      if (run.introTime >= CONFIG.intro) run.phase = "playing";
+      return;
+    }
+    if (run.phase !== "playing") return;
+    run.visualTime = (run.visualTime ?? run.time) + dt;
+    if (!run.bossEncounter.active)
+      run.time = Math.min(CONFIG.duration, run.time + dt);
+    const regeneration=run.abilities.bloodOath+run.abilities.marshfire+(run.regenPower||0);
+    if(regeneration){
+      run.regenTimer+=dt;
+      if(run.regenTimer>=4){run.player.hp=Math.min(run.player.maxHp,run.player.hp+regeneration);run.regenTimer=0;}
+    }
+    if (run.time >= CONFIG.duration) {
+      run.phase = "victory";
+      return;
+    }
+    const p = run.player;
+    p.invulnerable = Math.max(0, p.invulnerable - dt);
+    run.levelFlash = Math.max(0, run.levelFlash - dt);
+    this.move(run, dt, input);
+    this.weather.update(run, dt);
+    this.treasure.update(run,dt);
+    if(run.phase==="defeat")return;
+    this.crates.update(run, dt, (x, z, type, value) => this.drop(run, x, z, type, value));
+    if (!run.bossEncounter.active) this.merchant.update(run);
+    if (run.phase === "merchant") return;
+    if (!run.bossEncounter.active) this.boss.start(run);
+    this.boss.updateArena(run, dt);
+    if (run.phase === "defeat") return;
+    this.enemies.update(run, dt);
+    if (run.phase === "defeat") return;
+    this.combat.update(run, dt);
+    const killed=[];
+    run.enemies = run.enemies.filter((enemy) => {
+      if (enemy.hp > 0) return true;
+      run.kills++;
+      if(enemy.treasure){this.treasure.defeated(run,enemy,(...args)=>this.drop(run,...args));return false;}
+      killed.push(enemy.type);
+      if (enemy.bossId) run.defeatedBosses.add(enemy.bossId);
+      else run.defeatedTypes.add(enemy.type);
+      this.drop(run, enemy.x, enemy.z, "xp", enemy.xp);
+      if (run.abilities.soulHarvest)
+        p.hp = Math.min(p.maxHp, p.hp + abilityStats("soulHarvest", run.abilities.soulHarvest).heal);
+      if (enemy.type === "boss" || enemy.type === "marshal") {
+        this.drop(run, enemy.x + 0.4, enemy.z, "coin", enemy.type==="marshal"?120:80);
+        this.boss.defeated(run);
+      }
+      if (enemy.type === "dog")
+        this.drop(run, enemy.x + 0.3, enemy.z, "coin", 2);
+      else if (run.kills % 5 === 0)
+        this.drop(run, enemy.x + 0.3, enemy.z, "coin", 1);
+      return false;
+    });
+    if(run.clearSummons){run.enemies=run.enemies.filter(e=>!e.summoned);run.clearSummons=false;}
+    for (const enemy of run.enemies) {
+      if(enemy.treasure)continue;
+      if (enemy.warning > 0) continue;
+      if (
+        Math.hypot(enemy.x - p.x, enemy.z - p.z) <
+          (["boss","marshal"].includes(enemy.type) ? 1.25 : enemy.type === "dog" ? 1 : 0.85) &&
+        p.invulnerable <= 0
+      ) {
+        p.hp = Math.max(0, p.hp - enemy.damage * 20 / (20 + run.playerArmor));
+        p.invulnerable = 0.9;
+        run.events.push("hurt");
+        if (p.hp === 0) {
+          run.phase = "defeat";
+          return;
+        }
+      }
+    }
+    this.collect(run, dt);
+    this.missions.update(run,killed,dt);
+  }
+  move(run, dt, input) {
+    const p = run.player, oldX = p.x, oldZ = p.z;
+    const length = Math.hypot(input.x, input.z);
+    const hasInput = length > 0.12;
+    if (hasInput) {
+      p.dx = input.x / length;
+      p.dz = input.z / length;
+    }
+    const moveX=hasInput?input.x/length:0,moveZ=hasInput?input.z/length:0;
+    const steps=Math.max(1,Math.ceil(run.moveSpeed*dt/.25));
+    for(let i=0;i<steps;i++){
+      p.x=clamp(p.x+moveX*run.moveSpeed*dt/steps);p.z=clamp(p.z+moveZ*run.moveSpeed*dt/steps);
+      for(let pass=0;pass<3;pass++)for(const prop of nearbyProps(run,p.x,p.z))pushOut(p,prop,.4);
+    }
+    p.moving = Math.hypot(p.x - oldX, p.z - oldZ) > 0.001;
+    if (p.moving) p.walkTime += dt;
+  }
+  drop(run, x, z, type, value) {
+    if (run.loot.length >= CONFIG.maxLoot) {
+      const existing = run.loot.find((item) => item.type === type);
+      if (existing) {
+        existing.value += value;
+        return;
+      }
+    }
+    run.loot.push({ id: ++run.nextId, x, z, type, value, attracted: false });
+  }
+  collect(run, dt) {
+    const p = run.player;
+    run.loot = run.loot.filter((item) => {
+      const dx = p.x - item.x,
+        dz = p.z - item.z,
+        distance = Math.hypot(dx, dz);
+      if (distance < run.magnetRadius) item.attracted = true;
+      if (distance < 0.6 || (item.attracted && distance < 15 * dt)) {
+        if (item.type === "xp") run.addXp(Math.ceil(item.value*run.xpMultiplier));
+        else if(item.type==="bandage") p.hp=Math.min(p.maxHp,p.hp+item.value);
+        else run.coins += item.type==='treasureCoin'?item.value:Math.max(1,Math.ceil(item.value*run.coinMultiplier));
+        return false;
+      }
+      if (item.attracted) {
+        item.x += (dx / distance) * 15 * dt;
+        item.z += (dz / distance) * 15 * dt;
+      }
+      return true;
+    });
+  }
+}
