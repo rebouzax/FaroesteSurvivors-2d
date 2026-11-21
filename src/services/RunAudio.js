@@ -1,4 +1,5 @@
 import { desertSurfaceAt } from '../models/DesertLayout.js';
+import { mineSurfaceAt } from '../models/MineLayout.js';
 
 const STEPS = { sand: 'stepSand', trail: 'stepTrail', rock: 'stepRock' };
 const WEAPONS = { bow: 'arrow', crossbow: 'crossbow', knives: 'throw', rifle: 'rifle', repeater: 'rifle', shotgun: 'shotgun', sawedoff: 'shotgun' };
@@ -75,7 +76,8 @@ export class RunAudio {
     this.travel -= this.nextStep;
     this.nextStep = run.characterId === 'labuta' ? 1.57 : 1.43;
     this.foot *= -1;
-    const surface = run.mapId === 'desert' ? desertSurfaceAt(player.x, player.z) : 'trail';
+    const surfaceAt = { mine: mineSurfaceAt, desert: desertSurfaceAt }[run.mapId];
+    const surface = surfaceAt?.(player.x, player.z) ?? 'trail';
     this.play(STEPS[surface], {
       gain: run.characterId === 'labuta' ? .32 : .26,
       pitch: run.characterId === 'labuta' ? .9 : 1,

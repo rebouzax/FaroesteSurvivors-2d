@@ -1,4 +1,5 @@
 import { FRONTIER_CARDS, FRONTIER_ENEMIES, frontierCardStats } from "./frontierExpansion.js";
+import { EARLY_ENEMIES } from "./earlyEnemies.js";
 export const ABILITY_IDS = [...Object.keys(FRONTIER_CARDS), "pistol", "molotov", "heart", "horseshoe", "ghostShot", "requiem", "silverRain", "lantern", "soulHarvest", "boneStorm", "ironWill", "lastStand", "bulwark", "inferno", "silverStorm", "ironCharm", "deadeye", "bloodOath", "saltedRounds", "dustWaltz", "ironRosary", "blueTonic", "longshot", "bentoHourglass", "bentoLuckyStar", "bentoSaddle", "bentoMercyCoin", "bentoGhostLead", "windwardOath", "saloonTempest", "marshfire", "railbreaker", "crowstorm"];
 export const abilityMaxLevel = id => id === 'doubleShot' ? 6 : 4;
 ABILITY_IDS.push('doubleShot');
@@ -124,10 +125,14 @@ export function cardDescription(id, nextLevel, attackRate = 1) {
   return "+20 de vida máxima e recupera 20 de vida nesta partida.";
 }
 export const shopHealthPrice = (rank) => Math.ceil(25 * 1.55 ** rank);
-import { EARLY_ENEMIES } from "./earlyEnemies.js";
-export function enemyStats(type, minute) {
-  const frontier = {
+const ENEMY_BASE = {
     ...FRONTIER_ENEMIES, ...EARLY_ENEMIES,
+    bat: { hp: 10, damage: 10, armor: 0, speed: 2.5, xp: 10 },
+    dog: { hp: 35, damage: 14, armor: 2, speed: 3.5, xp: 20 },
+    skeleton: { hp: 22, damage: 8, armor: 1, speed: 1.7, xp: 15 },
+    wraith: { hp: 54, damage: 17, armor: 5, speed: 2.75, xp: 30 },
+    crow: { hp: 27, damage: 12, armor: 2, speed: 3.7, xp: 16 },
+    miner: { hp: 42, damage: 12, armor: 1, speed: 2.9, xp: 25 },
     bellRinger:{hp:86,damage:26,armor:6,speed:1.8,xp:38}, dustCoyote:{hp:58,damage:27,armor:3,speed:4.3,xp:34},
     lanternThief:{hp:77,damage:31,armor:5,speed:2.8,xp:40}, windmillWraith:{hp:105,damage:35,armor:9,speed:2.4,xp:48},
     mireLeech:{hp:116,damage:38,armor:8,speed:2.2,xp:52}, reedStalker:{hp:92,damage:41,armor:7,speed:3.1,xp:50},
@@ -138,23 +143,9 @@ export function enemyStats(type, minute) {
     ironLocust:{hp:136,damage:59,armor:12,speed:4.5,xp:73}, graveRider:{hp:302,damage:71,armor:24,speed:3.2,xp:94},
     boneCactus:{hp:325,damage:77,armor:28,speed:1.3,xp:102}, sundownBandit:{hp:215,damage:72,armor:16,speed:3.4,xp:89},
     cinderHawk:{hp:166,damage:79,armor:13,speed:4.8,xp:96}, rattlesnake:{hp:184,damage:83,armor:15,speed:4.6,xp:104},
-  };
-  if(frontier[type]) {
-    const base=frontier[type];
-    return {hp:Math.round(base.hp*(1+minute*0.18)),damage:Math.round(base.damage*(1+minute*0.12)),armor:base.armor+Math.floor(minute/2),speed:base.speed+Math.min(1.3,minute*0.1),xp:base.xp};
-  }
-  const base =
-    type === "dog"
-      ? { hp: 35, damage: 14, armor: 2, speed: 3.5, xp: 20 }
-      : type === "skeleton"
-        ? { hp: 22, damage: 8, armor: 1, speed: 1.7, xp: 15 }
-      : type === "wraith"
-        ? { hp: 54, damage: 17, armor: 5, speed: 2.75, xp: 30 }
-      : type === "crow"
-        ? { hp: 27, damage: 12, armor: 2, speed: 3.7, xp: 16 }
-      : type === "miner"
-        ? { hp: 42, damage: 12, armor: 1, speed: 2.9, xp: 25 }
-      : { hp: 10, damage: 10, armor: 0, speed: 2.5, xp: 10 };
+};
+export function enemyStats(type, minute) {
+  const base = ENEMY_BASE[type] ?? ENEMY_BASE.bat;
   return {
     hp: Math.round(base.hp * (1 + minute * 0.18)),
     damage: Math.round(base.damage * (1 + minute * 0.12)),

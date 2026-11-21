@@ -1,6 +1,6 @@
 # Faroeste Survivors 2D
 
-Versão isométrica em pixel art 32 bits do Faroeste Survivors. A primeira fase, **Deserto dos Esquecidos**, usa as regras do jogo de referência e tem arte 2D própria.
+Versão isométrica em pixel art de 32 bits do Faroeste Survivors, com as fases **Deserto dos Esquecidos** e **Mina da Noite**.
 
 ## Jogar
 
@@ -12,15 +12,15 @@ npm run dev
 ```
 
 - **Andar** com WASD, setas ou toque e arraste no campo de batalha.
-- **Atacar** é automático. João usa o laço e os outros campeões usam suas armas próprias.
+- **Atacar** é automático. João usa o chicote e os outros campeões usam suas armas próprias. Disparo Duplicado acrescenta ataques sequenciais em outras direções ao chicote, aos disparos e aos arremessos.
 - **Pausar** com Esc ou o botão no canto superior direito.
-- **Coletar** experiência, moedas, suprimentos e bandagens passando perto dos itens. O indicador no HUD aponta para caixas, Bento e o Escorpião do Ouro.
+- **Coletar** experiência, moedas, suprimentos e bandagens passando perto dos itens. O indicador no HUD aponta para caixas, Bento e a criatura de tesouro da fase.
 
 Na seleção de fase, abra **Arsenal**, **Loja do Bento** ou **Bestiário** para preparar a partida. O Arsenal é liberado ao terminar a primeira partida.
 
 Em celulares e tablets compatíveis, o primeiro toque em **Novo jogo** solicita tela cheia. No iPhone ou iPad, use **Adicionar à Tela de Início** no Safari e abra pelo ícone para jogar sem a barra do navegador. O jogo se ajusta em retrato e paisagem. A opção **Resolução do jogo** permite começar com mais nitidez e continua se ajustando à carga da partida.
 
-No modo História, conclua as três missões e vença o Patriarca da Noite, o Chupacabra de Brasas e o Xerife das Sombras durante os 15 minutos de sobrevivência. O relógio congela enquanto houver um chefe na arena ou uma escolha pendente. Completar a fase libera o modo Livre. As moedas e descobertas são registradas ao terminar uma partida e o perfil 2D fica salvo no navegador.
+Cada fase tem 15 minutos de sobrevivência, com ondas que se intensificam conforme o relógio avança. No modo História, conclua três missões e derrote três chefes na mesma partida. Vencer o Deserto libera a Mina e o Modo Livre. Vencer a Mina libera Elias Ferro, Ruth Faísca e Neco Pavio. O relógio congela durante confrontos com chefes e escolhas de cartas. O progresso fica salvo no navegador.
 
 ## Código
 
@@ -32,7 +32,7 @@ No modo História, conclua as três missões e vença o Patriarca da Noite, o Ch
 | `src/views` | Menu e HUD em HTML, câmera ortográfica, cenário e sprites 2D no Three.js |
 | `src/services` | Controles, áudio, persistência e textos |
 
-`npm test` verifica regressões da fase. `npm run build` gera a versão estática em `dist`. `npm run preview` serve a build localmente.
+`npm test` verifica regressões de combate, progressão e renderização. `npm run build` gera a versão estática em `dist`. `npm run preview` serve a build localmente.
 
 ## Publicação no GitHub Pages
 

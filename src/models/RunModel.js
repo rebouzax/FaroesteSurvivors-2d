@@ -1,6 +1,7 @@
 import { CONFIG, levelCost } from "../config/gameConfig.js";
 import { FRONTIER_CARDS } from "../config/frontierExpansion.js";
 import { ABILITY_IDS, abilityMaxLevel } from "../config/abilityConfig.js";
+import { championAbilityStats } from "../config/championCards.js";
 import { createWorld } from "./WorldModel.js";
 import { temporaryPrice } from "../config/shopConfig.js";
 import { CHARACTERS } from "../config/characterConfig.js";
@@ -108,6 +109,7 @@ export class RunModel {
     this.primaryShots = [];
     this.pendingCopies = [];
     this.whipEchoes = [];
+    this.primaryEcho = null;
     this.primaryFlash = 0;
     this.bottles = [];
     this.fires = [];
@@ -161,20 +163,7 @@ export class RunModel {
       remaining: this.chain > 1 ? 20 : 0,
       multiplier: 1 + 0.2 * (this.chain - 1),
     };
-    if (id === "heart") {
-      this.player.maxHp += 20;
-      this.player.hp = Math.min(
-        this.player.maxHp,
-        this.player.hp + 20 + 10 * (this.chain - 1),
-      );
-    }
-    if(id==="ironWill")this.playerArmor+=3;
-    if (id === "bulwark") {
-      this.playerArmor += 2;
-      this.player.maxHp += 10;
-      this.player.hp = Math.min(this.player.maxHp, this.player.hp + 10);
-    }
-    this.applyCardEffects(id);
+    this.applyCardEffects(id, 10 * (this.chain - 1));
     if (!this.pendingChoices || !this.deck.some(card=>this.abilities[card]<abilityMaxLevel(card))) {
       this.coins+=this.pendingChoices*12;
       this.pendingChoices=0;
@@ -203,16 +192,6 @@ export class RunModel {
   chooseMissionCard(id) {
     if(this.phase!=="mission-card"||!this.missionOffers.includes(id)||this.abilities[id]>=abilityMaxLevel(id))return false;
     this.abilities[id]++;
-    if(id==="ironWill")this.playerArmor+=3;
-    if(id==="heart"){
-      this.player.maxHp+=20;
-      this.player.hp=Math.min(this.player.maxHp,this.player.hp+20);
-    }
-    if (id === "bulwark") {
-      this.playerArmor += 2;
-      this.player.maxHp += 10;
-      this.player.hp = Math.min(this.player.maxHp, this.player.hp + 10);
-    }
     this.applyCardEffects(id);
     this.mission=null;
     this.missionOffers=[];
@@ -237,16 +216,6 @@ export class RunModel {
     else if (id === "spur") this.moveSpeed += this.hero.speed * 0.05;
     else {
       this.abilities[id]++;
-      if(id==="ironWill")this.playerArmor+=3;
-      if (id === "bulwark") {
-        this.playerArmor += 2;
-        this.player.maxHp += 10;
-        this.player.hp = Math.min(this.player.maxHp, this.player.hp + 10);
-      }
-      if (id === "heart") {
-        this.player.maxHp += 20;
-        this.player.hp = Math.min(this.player.maxHp, this.player.hp + 20);
-      }
       this.applyCardEffects(id);
     }
     return true;
@@ -261,7 +230,17 @@ export class RunModel {
     return this.missionsCompleted >= CAMPAIGN[this.mapId].missions.length &&
       this.bossEncounter.nextBoss >= CAMPAIGN[this.mapId].bosses.length;
   }
-  applyCardEffects(id){
+  cardStats(id, level = this.abilities[id]) {
+    return championAbilityStats(this.characterId, id, level);
+  }
+  applyCardEffects(id, heartChain = 0){
+    if (id === 'heart' || id === 'ironWill' || id === 'bulwark') {
+      const { armor = 0, health = 0 } = this.cardStats(id, 1);
+      this.playerArmor += armor;
+      this.player.maxHp += health;
+      this.player.hp = Math.min(this.player.maxHp, this.player.hp + health + (id === 'heart' ? heartChain : 0));
+      return;
+    }
     const stats=FRONTIER_CARDS[id]?.stats;
     if(stats){
       this.primaryDamage+=stats.damage||0;this.primaryRange+=stats.range||0;

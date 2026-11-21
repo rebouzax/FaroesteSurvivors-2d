@@ -5,11 +5,15 @@ export const ENEMY_FRAME_SIZE = 80;
 const SIZE = {
   bat: 30, dog: 39, vulture: 50, skeleton: 42,
   giantBat: 112, fireChupacabra: 102, shadowMarshal: 69, treasure: 33,
+  miner: 47, mineSpider: 43, mineSkull: 38, blindCrawler: 38, treasureRat: 43,
+  shovelMiner: 99, giantMoth: 112, minerGeneral: 95,
 };
 const FLIGHT = {
   bat: { altitude: 15, shadow: 17 },
   vulture: { altitude: 28, shadow: 27 },
   giantBat: { altitude: 45, shadow: 61 },
+  mineSkull: { altitude: 15, shadow: 19 },
+  giantMoth: { altitude: 37, shadow: 53 },
 };
 const FLAP = [4, 0, 1, 5, 2, 6, 3, 7];
 const GALLOP = [4, 1, 5, 2, 6, 0];
@@ -17,6 +21,9 @@ const VULTURE_FLAP = [0, 4, 2, 5, 1, 5, 6, 4];
 const BOSS_FLAP = [4, 0, 1, 5, 2, 5, 1, 4];
 const STRIDE = [0, 4, 1, 5];
 const SKITTER = [0, 4, 1, 5, 2, 6, 3, 7];
+const WALK = [0, 1, 2, 3];
+const TWO_STEP = [0, 1];
+const MOTH_FLAP = [0, 1, 2, 1];
 const cycle = (frames, time) => frames[Math.floor(time) % frames.length];
 const smooth = value => {
   const t = Math.max(0, Math.min(1, value));
@@ -64,12 +71,32 @@ export function enemyPose(name, enemy, time, travel, distance, bossTell, point =
     case 'treasure':
       frame = cycle(SKITTER, travel * 5.3 + seeded);
       break;
+    case 'miner':
+      frame = enemy.attackFlash > .3 ? 3 : cycle(WALK, travel * 3 + seeded);
+      break;
+    case 'mineSpider':
+      frame = cycle(WALK, travel * 6 + seeded);
+      break;
+    case 'mineSkull':
+      frame = enemy.aimTimer > 0 ? 1 : cycle(TWO_STEP, time * 5 + seeded);
+      break;
+    case 'blindCrawler':
+    case 'treasureRat':
+      frame = enemy.charge?.left > 0 && !(enemy.charge.warning > 0) ? 1 : cycle(TWO_STEP, travel * 4.5 + seeded);
+      break;
+    case 'shovelMiner':
+    case 'minerGeneral':
+      frame = bossTell ? 2 : enemy.releaseFlash > 0 || enemy.dash ? 3 : cycle(TWO_STEP, travel * 1.9 + seeded);
+      break;
+    case 'giantMoth':
+      frame = bossTell || enemy.dash ? 3 : cycle(MOTH_FLAP, time * 11);
+      break;
     default:
       return { frame: name, size: 30, shadow: 24, lift: 0, anchorY: 0 };
   }
   const sweep = flight ? Math.sin(time * (name === 'bat' ? 9 : 4) + seeded) * 2 : 0;
   return {
-    frame: name + frame,
+    frame: (name === 'treasureRat' ? 'blindCrawler' : name) + frame,
     size: SIZE[name],
     shadow: flight?.shadow ?? SIZE[name] * .6,
     lift: (flight?.altitude ?? 0) + sweep - dive * 11,

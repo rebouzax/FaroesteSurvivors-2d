@@ -1,10 +1,12 @@
 import { FRONTIER_STAGES } from "../config/frontierExpansion.js";
 import { sceneryFor,sceneryColliders } from '../config/sceneryPlan.js';
 import { createDesertProps } from './DesertLayout.js';
+import { createMineProps } from './MineLayout.js';
 
 const landmarkStages=new Set(Object.keys(FRONTIER_STAGES));
 export function createWorld(mapId = "desert") {
   if (mapId === 'desert') return createDesertProps();
+  if (mapId === 'mine') return createMineProps();
   let seed = 1887;
   const random = () => {
     seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;

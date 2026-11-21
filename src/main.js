@@ -8,7 +8,8 @@ import { baseArt, desertArt } from './views/DesertArt.js';
 import { ScreenView } from './views/ScreenView.js';
 import { RenderQuality } from './views/RenderQuality.js';
 import { BattlefieldMotion } from './views/BattlefieldMotion.js';
-import { CHAMPION_CELLS } from './views/ChampionAnimation.js';
+import { CHAMPION_CELLS, MINE_CHAMPIONS } from './views/ChampionAnimation.js';
+import { MAPS } from './config/mapConfig.js';
 
 const root = document.querySelector('#app');
 const audio = new AudioService();
@@ -17,13 +18,13 @@ const vm = new AppViewModel(profile, audio, CHAMPION_CELLS);
 let session;
 let loadingRun;
 let shownPage;
-let portraitsPromise;
+const portraitsPromises = new Map();
 const screen = new ScreenView(root, action => {
   const focus = document.activeElement?.dataset?.action;
   if (action === 'modes' || action === 'begin') void enterTouchFullscreen();
   vm.action(action);
   if (focus === action && !['game', 'menu'].includes(vm.page) &&
-      /^(hero|buy|buy-card|deck|forge):/.test(action)) {
+      /^(hero|map|buy|buy-card|deck|forge):/.test(action)) {
     const restore = root.querySelector(`[data-action="${CSS.escape(action)}"]`);
     if (!restore?.disabled) restore?.focus({ preventScroll: true });
   }
@@ -65,11 +66,11 @@ function render(app, force = false) {
     menu: () => screen.menu(data.wind),
     modes: () => screen.modes(data),
     heroes: () => screen.heroes(data, app.selected, app.mode),
-    stage: () => screen.stage(app.mode, app.selected, app.profile),
+    stage: () => screen.stage(app.mode, app.selected, app.profile, app.stageId),
     settings: () => screen.settings(data, profile.available),
     shop: () => screen.shop(profile),
-    arsenal: () => screen.arsenal(data, app.message),
-    bestiary: () => screen.bestiary(data),
+    arsenal: () => screen.arsenal(data, app.message, app.selected),
+    bestiary: () => screen.bestiary(data, app.stageId),
     exit: () => screen.shell('O deserto espera.', '<p>Você pode fechar esta aba ou voltar ao menu.</p>', 'menu', 'settings-shell'),
   };
   pages[app.page]();
@@ -78,35 +79,39 @@ function render(app, force = false) {
 }
 
 function preparePortraits() {
-  portraitsPromise ??= baseArt().then(art => {
-    screen.portraits = art.portraits;
+  const withMine = Boolean(profile.data.storyClears.mine || (vm.page === 'bestiary' && vm.stageId === 'mine'));
+  if (portraitsPromises.has(withMine)) return;
+  portraitsPromises.set(withMine, baseArt(withMine).then(art => {
+    Object.assign(screen.portraits, art.portraits);
     if (['heroes', 'bestiary'].includes(vm.page)) {
       const focus = document.activeElement?.dataset?.action;
       render(vm);
       if (focus) root.querySelector(`[data-action="${CSS.escape(focus)}"]`)?.focus({ preventScroll: true });
     }
   }).catch(error => {
-    portraitsPromise = undefined;
+    portraitsPromises.delete(withMine);
     console.warn('Os retratos serão carregados novamente ao iniciar a partida.', error);
-  });
+  }));
 }
 
 async function mount(gameVm) {
   loadingRun = gameVm;
-  screen.shell('Preparando o deserto…', '', 'menu', 'settings-shell');
+  const run = gameVm.model;
+  const stageName = MAPS[run.mapId].name;
+  screen.shell(`Preparando ${stageName}…`, '', 'menu', 'settings-shell');
   try {
-    const [art, { DesertView }] = await Promise.all([desertArt(), import('./views/DesertView.js')]);
-    screen.portraits = art.portraits;
+    const withMine = run.mapId === 'mine' || MINE_CHAMPIONS.includes(run.characterId);
+    const [art, { DesertView }] = await Promise.all([desertArt(withMine), import('./views/DesertView.js')]);
+    Object.assign(screen.portraits, art.portraits);
     if (vm.run !== gameVm || loadingRun !== gameVm) return;
     loadingRun = null;
-    const run = gameVm.model;
     const refs = screen.game(run);
     const compact = usesTouchLayout();
     const high = profile.data.graphics === 'high';
     const quality = new RenderQuality({ compact, high });
     const motion = new BattlefieldMotion();
     const view = new DesertView(refs.battlefield, art, run.props, {
-      ...profile.data, compact, renderScale: quality.scale,
+      ...profile.data, compact, renderScale: quality.scale, stageId: run.mapId,
       reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
     });
     const input = new InputService(refs.battlefield, refs.joystick, () => vm.action('pause'),
@@ -187,11 +192,11 @@ async function mount(gameVm) {
     screen.hud(run);
     schedule();
   } catch (error) {
-    console.error('Falha ao iniciar o Deserto dos Esquecidos.', error);
+    console.error(`Falha ao iniciar ${stageName}.`, error);
     if (vm.run !== gameVm) return;
     stopGame();
     audio.setMusic('menu');
-    screen.shell('O deserto não abriu', '<p>Recarregue a página em um navegador com WebGL 2 e aceleração gráfica para tentar novamente.</p>', 'menu', 'settings-shell');
+    screen.shell('A fase não abriu', '<p>Recarregue a página em um navegador com WebGL 2 e aceleração gráfica para tentar novamente.</p>', 'menu', 'settings-shell');
   }
 }
 

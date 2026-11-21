@@ -1,4 +1,5 @@
-import { heroUnlocked } from '../config/campaignConfig.js';
+import { heroUnlocked, stageUnlocked } from '../config/campaignConfig.js';
+import { PLAYABLE_STAGES } from '../config/playableStages.js';
 import { GameViewModel } from './GameViewModel.js';
 
 const PROGRESSION_PAGES = ['arsenal', 'shop', 'bestiary'];
@@ -10,6 +11,7 @@ export class AppViewModel {
     this.heroes = heroes;
     this.selected = 'joao';
     this.mode = 'story';
+    this.stageId = 'desert';
     this.page = 'menu';
     this.message = '';
     this.run = null;
@@ -39,8 +41,8 @@ export class AppViewModel {
   }
 
   start() {
-    if (!heroUnlocked(this.profile.data, this.selected)) return;
-    this.run = new GameViewModel(this.profile, this.audio, { characterId: this.selected, mapId: 'desert', mode: this.mode });
+    if (!heroUnlocked(this.profile.data, this.selected) || !stageUnlocked(this.profile.data, this.stageId)) return;
+    this.run = new GameViewModel(this.profile, this.audio, { characterId: this.selected, mapId: this.stageId, mode: this.mode });
     this.audio.stopEffects();
     this.audio.setPaused(false);
     this.audio.setMusic('desert');
@@ -78,6 +80,10 @@ export class AppViewModel {
       return this.emit();
     }
     if (page === 'heroes' && command === 'stage' && heroUnlocked(profile.data, this.selected)) return this.go('stage');
+    if (page === 'stage' && command === 'map' && PLAYABLE_STAGES.includes(id)) {
+      this.stageId = id;
+      return this.emit();
+    }
     if (page === 'stage' && command === 'heroes') return this.go('heroes');
     if (page === 'stage' && command === 'begin') return this.start();
     if (page === 'shop' && ((command === 'buy' && profile.buyUpgrade(id)) || (command === 'buy-card' && profile.buyBentoCard(id)))) {

@@ -1,4 +1,6 @@
-export const CHAMPION_CELLS = Object.freeze(['joao', 'maria', 'labuta', 'indigo', 'rosa', 'ada']);
+export const DESERT_CHAMPIONS = Object.freeze(['joao', 'maria', 'labuta', 'indigo', 'rosa', 'ada']);
+export const MINE_CHAMPIONS = Object.freeze(['elias', 'ruth', 'dynamite']);
+export const CHAMPION_CELLS = Object.freeze([...DESERT_CHAMPIONS, ...MINE_CHAMPIONS]);
 
 const styles = {
   joao:   { size: 49, stride: 2.8, follow: .12, shadow: 23, recoil: .8 },
@@ -7,15 +9,18 @@ const styles = {
   indigo: { size: 49, stride: 2.9, follow: .11, shadow: 25, recoil: 1 },
   rosa:   { size: 49, stride: 3.2, follow: .13, shadow: 25, recoil: 1.45 },
   ada:    { size: 50, stride: 2.7, follow: .105, shadow: 25, recoil: 1.3 },
+  elias:  { size: 52, stride: 2.65, follow: .12, shadow: 27, recoil: 2.2 },
+  ruth:   { size: 50, stride: 2.95, follow: .11, shadow: 25, recoil: 2.45 },
+  dynamite: { size: 51, stride: 2.8, follow: .14, shadow: 26, recoil: .7 },
 };
 const walk = [1, 2, 3, 2];
 
-export function championPose(id, { moving, travel, attack, attackAge = 0, hurt = false }) {
+export function championPose(id, { moving, travel, attack, attackAge = 0, hurt = false, echoAge }) {
   const style = styles[id];
   if (!style) return { frame: id, size: 32, shadow: 24, anchorY: 0, recoil: 0 };
   const release = id === 'joao' ? .18 : .16;
-  const sinceRelease = Math.max(0, attackAge - release);
-  const striking = attack?.hit && sinceRelease < style.follow;
+  const sinceRelease = echoAge ?? Math.max(0, attackAge - release);
+  const striking = (echoAge !== undefined || attack?.hit) && sinceRelease < style.follow;
   let frame;
   if (striking) frame = 5;
   else if (hurt) frame = 7;

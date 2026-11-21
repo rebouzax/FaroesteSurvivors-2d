@@ -7,6 +7,7 @@ import { FRONTIER_ENEMIES } from "../config/frontierExpansion.js";
 import { enemyStats } from "../config/abilityConfig.js";
 import { ENEMY_STAGE_GROUPS } from "../config/campaignConfig.js";
 import { EARLY_ENEMIES } from "../config/earlyEnemies.js";
+import { ENEMY_WAVES } from "../config/playableStages.js";
 const clamp = (value) =>
   Math.max(-CONFIG.mapHalf + 1, Math.min(CONFIG.mapHalf - 1, value));
 const RANGED_ENEMIES = new Set(["bellRinger","lanternThief","windmillWraith","drownedProspector","barBanshee","railWitch","graveRider","sundownBandit",...Object.keys(FRONTIER_ENEMIES).filter(id=>FRONTIER_ENEMIES[id].behavior==="ranged")]);
@@ -34,7 +35,15 @@ export class EnemySystem {
     enemy.z = clamp(enemy.z);
     return blocked;
   }
-  spawnForStage(run) {
+  spawnForStage(run, weights) {
+    if (weights) {
+      let roll = run.random() * weights.reduce((sum, [, weight]) => sum + weight, 0);
+      for (const [id, weight] of weights) {
+        roll -= weight;
+        if (roll < 0) return this.spawn(run, id);
+      }
+      return;
+    }
     const roster = ENEMY_STAGE_GROUPS[run.mapId];
     if (!roster?.length) throw new Error("Fase sem bestiário: " + run.mapId);
     // Vultures use the separate fly-by spawner, which supplies velocity and warning.
@@ -149,6 +158,35 @@ export class EnemySystem {
         this.spawnVultures(run);
       }
     }
+    this.spawnWaves(run, dt);
+    const crowd = new EnemyCrowd(run.enemies);
+    this.moveEnemies(run, dt, crowd);
+  }
+  spawnWaves(run, dt) {
+    const minute = Math.floor(run.time / 60);
+    const waves = ENEMY_WAVES[run.mapId];
+    const wave = waves?.findLast(band => run.time >= band.at);
+    if (wave) {
+      run.spawnTimer -= dt;
+      if (run.spawnTimer > 0) return;
+      run.spawnTimer = Math.max(.54, 1.48 - run.time * .00115);
+      const cap = Math.min(run.maxEnemies ?? CONFIG.maxBats, wave.population);
+      const count = Math.min(cap - run.enemies.length, 1 + Math.floor(run.time / 175));
+      if (count <= 0) return;
+      if (run.enemyWave !== wave) {
+        const weights = Object.entries(wave.weights);
+        const introduced = weights.find(([id]) => !run.enemyWave?.weights[id]);
+        run.enemyWave = wave;
+        run.waveWeights = weights;
+        if (introduced) {
+          this.spawn(run, introduced[0]);
+          for (let i = 1; i < count; i++) this.spawnForStage(run, weights);
+          return;
+        }
+      }
+      for (let i = 0; i < count; i++) this.spawnForStage(run, run.waveWeights);
+      return;
+    }
     run.spawnTimer -= dt;
     if (run.spawnTimer <= 0) {
       run.spawnTimer = Math.max(0.3, 1.5 - run.time / 700);
@@ -189,7 +227,8 @@ export class EnemySystem {
       if(run.specialSpawnTimer<=0){run.specialSpawnTimer=Math.max(2.4,7.5-minute*.22);
         this.spawnForStage(run);}
     }
-    const crowd = new EnemyCrowd(run.enemies);
+  }
+  moveEnemies(run, dt, crowd) {
     for (const enemy of run.enemies) {
       if(enemy.treasure)continue;
       enemy.throwRelease=Math.max(0,(enemy.throwRelease||0)-dt);

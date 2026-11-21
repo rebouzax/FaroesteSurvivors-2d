@@ -4,6 +4,8 @@ const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 const BODY_RADIUS = {
   bat: .95, dog: 1.15, skeleton: 1, vulture: 1.3,
   giantBat: 1.85, fireChupacabra: 1.85, shadowMarshal: 1.32,
+  miner: 1.06, mineSpider: 1.1, mineSkull: .86, blindCrawler: .91,
+  shovelMiner: 1.7, giantMoth: 1.7, minerGeneral: 1.55,
 };
 
 export const enemyBodyRadius = enemy => enemy.treasure ? 1.1 : BODY_RADIUS[enemy.bossId || enemy.type] ?? .95;

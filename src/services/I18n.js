@@ -1,4 +1,4 @@
-import {abilityStats} from '../config/abilityConfig.js';
+import { championAbilityStats } from '../config/championCards.js';
 import {FRONTIER_HEROES,FRONTIER_STAGES,FRONTIER_ENEMIES,FRONTIER_BOSSES,FRONTIER_CARDS} from '../config/frontierExpansion.js';
 export const LANGUAGES={en:'English (US)',es:'Español',pt:'Português (Brasil)'};
 export function unlockRequirementText(lang, rule) {
@@ -378,14 +378,30 @@ const specialTexts={
  es:{specialChampion:'Campeón exclusivo','hero.clanker':'Robot recuperado del ferrocarril. Lanza cuatro bolas de fuego desde sus manos.','heroLock.clanker':'Completa el Ferrocarril de los Condenados en campaña, su cuarta misión y derrota a Clanker.','boss.clanker':'Clanker, el Chatarrero','lore.clanker':'Autómata del ferrocarril. Derrótalo para reclutar un campeón que lanza fuego.'},
 };
 for(const language of ['pt','en','es'])Object.assign({pt,en,es}[language],specialTexts[language]);
-export function localizedCardDescription(language,id,level,attackRate=1){
-  const stats=abilityStats(id,level);
+export function localizedCardDescription(language,id,level,attackRate=1,characterId){
+  const stats=championAbilityStats(characterId,id,level);
   const values={...stats,damage:stats.damage,attack:Math.round((stats.attack||0)*100),
     speed:Math.round((stats.speed||0)*100),haste:Math.round((stats.haste||0)*100),fortune:Math.round((stats.fortune||0)*100),critPercent:Math.round((stats.crit||0)*100),
     cooldown:stats.cooldown?Math.max(0.15,stats.cooldown/attackRate).toFixed(2):'',
-    radius:stats.radius?.toFixed(1),duration:stats.duration?.toFixed(2)};
+    radius:stats.radius?.toFixed(1),duration:stats.duration?.toFixed(2),
+    armorPerLevel:stats.armor/Math.max(1,level),healthPerLevel:id==='bulwark'?stats.health/Math.max(1,level):stats.health};
   return t(language,(id==='heart'?'health':id)+'Desc',values);
 }
 Object.assign(pt, {'ability.doubleShot':'Disparo Duplicado',doubleShotDesc:'+{count} por ataque de chicote, disparo ou arremesso. Os extras saem em sequência em outras direções.'});
 Object.assign(en, {'ability.doubleShot':'Duplicate Shot',doubleShotDesc:'+{count} per whip strike, shot or throw. Extra attacks follow in sequence in other directions.'});
 Object.assign(es, {'ability.doubleShot':'Disparo Duplicado',doubleShotDesc:'+{count} por latigazo, disparo o lanzamiento. Los ataques extra salen en secuencia en otras direcciones.'});
+Object.assign(pt, {
+  healthDesc: '+{health} de vida máxima e recupera {health} nesta partida.',
+  ironWillDesc: '+{armorPerLevel} de armadura por nível · {armor} da carta no total.',
+  bulwarkDesc: '+{armorPerLevel} de armadura e +{healthPerLevel} de vida máxima por nível.',
+});
+Object.assign(en, {
+  healthDesc: '+{health} max HP and heal {health} for this run.',
+  ironWillDesc: '+{armorPerLevel} armor per rank · {armor} from this card in total.',
+  bulwarkDesc: '+{armorPerLevel} armor and +{healthPerLevel} maximum HP per rank.',
+});
+Object.assign(es, {
+  healthDesc: '+{health} de vida máxima y recupera {health} en esta partida.',
+  ironWillDesc: '+{armorPerLevel} de armadura por nivel · {armor} de la carta en total.',
+  bulwarkDesc: '+{armorPerLevel} de armadura y +{healthPerLevel} de vida máxima por nivel.',
+});

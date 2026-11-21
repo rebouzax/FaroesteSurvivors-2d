@@ -173,6 +173,7 @@ img { display: block; max-width: 100%; }
 .hero-info p { margin-top: 1rem; max-width: 44ch; }
 .hero-stats, .result-stats { display: flex; flex-wrap: wrap; gap: .8rem 1.75rem; color: var(--muted); }
 .hero-stats b, .result-stats b { display: block; color: var(--gold); font: 700 1.2rem var(--label); }
+.hero-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem .55rem; }
 .roster { display: grid; grid-template-columns: repeat(6, 1fr); gap: .5rem; margin-top: .8rem; }
 .roster button { min-width: 0; display: grid; place-items: center; gap: .2rem; padding: .4rem; min-height: 77px; }
 .roster button[aria-pressed="true"], .list-item button[aria-pressed="true"] { background: #392b32; border-color: var(--gold); color: #ffdaad; }
@@ -181,6 +182,12 @@ img { display: block; max-width: 100%; }
 .roster span { font-size: .77rem; }
 .page-actions { display: flex; justify-content: flex-end; margin-top: 1.25rem; }
 .stage-picture { min-height: clamp(185px, 34vh, 345px); background: url('./assets/menu-night.webp') center 53%/cover; image-rendering: pixelated; }
+.stage-picture-mine { background-image: url('./assets/mine-preview.webp'); background-position: center 57%; }
+.stage-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .55rem; margin: .8rem 0; }
+.stage-picker button { display: flex; align-items: center; gap: .55rem; min-height: 46px; text-align: left; padding: .5rem .65rem; }
+.stage-picker small { font: .74rem var(--label); color: var(--gold); }
+.stage-picker span { font: 700 clamp(.91rem, 3vw, 1.12rem)/1.25 var(--display); }
+.stage-picker [aria-pressed="true"] { background: #38262e; border-color: #c7945f; }
 .stage-body { padding: clamp(.85rem, 3vw, 1.75rem); }
 .stage-meta { display: flex; flex-wrap: wrap; gap: .6rem 1.5rem; margin-bottom: .8rem; color: var(--gold); font-weight: 700; }
 .stage-champion { margin-top: .9rem; }
@@ -313,6 +320,84 @@ dialog h2 { font-size: clamp(1.65rem, 4.7vw, 2.6rem); margin-bottom: 1rem; }
 .card-icon { color: #f2bc78; font: 700 2.1rem var(--display); }
 .upgrade-card strong { font: 700 1.13rem var(--display); }
 .upgrade-card p { font-size: .84rem; }
+.ability-art {
+  --tone: #e9b57e;
+  position: relative;
+  display: block;
+  width: 100%;
+  isolation: isolate;
+  overflow: hidden;
+  background: #1d1725;
+}
+.tone-steel { --tone: #abc7df; }
+.tone-spirit { --tone: #9ddeca; }
+.tone-crimson { --tone: #f1a09a; }
+.ability-art i {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  aspect-ratio: 1;
+  transform: translateY(-50%);
+  background: url('./assets/ability-cards.webp') var(--art-x) var(--art-y) / 400% 400% no-repeat;
+  image-rendering: pixelated;
+}
+.illustrated-card {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  align-content: stretch;
+  gap: 0;
+  padding: 0;
+  background: #231c29;
+  box-shadow: 0 8px 15px #120e18a0;
+  transition: background-color .18s, border-color .18s, box-shadow .18s, transform .18s;
+}
+.illustrated-card .ability-art {
+  height: clamp(110px, 21vh, 166px);
+  box-shadow: inset 0 -22px 25px #160f1b90;
+}
+.illustrated-card .ability-art::before, .illustrated-card .ability-art::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+.illustrated-card .ability-art::before {
+  border: 1px solid color-mix(in srgb, var(--tone), transparent 49%);
+  background: linear-gradient(0deg, #211a2a9e, transparent 28%);
+}
+.illustrated-card .ability-art::after {
+  background: linear-gradient(110deg, transparent 28%, #faeac655 50%, transparent 70%);
+  transform: translateX(-110%);
+}
+.illustrated-card .card-copy {
+  display: grid;
+  align-content: start;
+  gap: .31rem;
+  padding: .72rem .78rem .85rem;
+}
+.card-desc { color: #deccba; font-size: .83rem; line-height: 1.4; }
+.card-affinity { display: block; font-size: .76rem; line-height: 1.35; color: #e9c995; }
+.illustrated-item .card-affinity { margin-top: .25rem; }
+.illustrated-card:is(:hover, :focus-visible) {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 22px #100b16c7;
+}
+.illustrated-card:is(:hover, :focus-visible) .ability-art::after { animation: card-glint .7s ease-out; }
+dialog[open] .illustrated-card { animation: deal-card .24s both ease-out; }
+dialog[open] .illustrated-card:nth-child(2) { animation-delay: .04s; }
+dialog[open] .illustrated-card:nth-child(3) { animation-delay: .08s; }
+@keyframes card-glint { to { transform: translateX(110%); } }
+@keyframes deal-card { from { opacity: 0; translate: 0 8px; } to { opacity: 1; translate: 0; } }
+.illustrated-item .ability-art {
+  flex: none;
+  width: clamp(42px, 9vw, 66px);
+  aspect-ratio: 1;
+  border: 1px solid color-mix(in srgb, var(--tone), transparent 46%);
+}
+#ability-bar .ability-art { position: absolute; inset: 0; }
+#ability-bar small { z-index: 1; padding: 1px 2px; background: #1c1525; }
 .merchant-list { margin-top: .7rem; }
 .result-stats { padding: .65rem 0 1rem; }
 .result-stats b { font-size: 1.3rem; }
@@ -331,6 +416,9 @@ dialog h2 { font-size: clamp(1.65rem, 4.7vw, 2.6rem); margin-bottom: 1rem; }
 @media (min-width: 491px) and (max-width: 960px) and (orientation: portrait) {
   .menu-screen .menu-landscape { background-position: 67% 50%; }
   .menu-panel { align-self: end; padding-bottom: clamp(2rem, 12dvh, 7rem); }
+}
+@media (min-width: 940px) {
+  .roster { grid-template-columns: repeat(9, minmax(0, 1fr)); }
 }
 @media (max-width: 490px) {
   .menu-screen { --menu-inset: 1.15rem; }
@@ -370,6 +458,10 @@ dialog h2 { font-size: clamp(1.65rem, 4.7vw, 2.6rem); margin-bottom: 1rem; }
   .key-help { display: none; }
   .card-grid { grid-template-columns: 1fr; }
   .upgrade-card { min-height: 0; }
+  .illustrated-card { grid-template: auto / clamp(78px, 26vw, 104px) minmax(0, 1fr); }
+  .illustrated-card .ability-art { height: 100%; min-height: 85px; }
+  .illustrated-card .ability-art i { height: 100%; width: auto; min-width: 100%; left: 50%; transform: translate(-50%, -50%); }
+  .illustrated-card .card-copy { padding: .52rem .58rem; }
   .card-icon { font-size: 1.45rem; }
 }
 @media (max-height: 460px) and (min-width: 491px) {
@@ -379,6 +471,11 @@ dialog h2 { font-size: clamp(1.65rem, 4.7vw, 2.6rem); margin-bottom: 1rem; }
   .main-nav button { min-height: 33px; padding-block: .3rem; }
   .sub-header { padding-block: .5rem; }
   .page-shell { padding-block: 1rem; }
+  .illustrated-card .ability-art { height: 100px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .illustrated-card, .illustrated-card:is(:hover, :focus-visible) { transform: none; transition: none; }
+  dialog[open] .illustrated-card, .illustrated-card:is(:hover, :focus-visible) .ability-art::after { animation: none; }
 }
 @media (pointer: coarse) {
   .back-button, .pause-button, .page-actions button { min-height: 44px; }
