@@ -9,6 +9,7 @@ import { CrateSystem } from "./CrateSystem.js";
 import { WeatherSystem } from "./WeatherSystem.js";
 import { MissionSystem } from "./MissionSystem.js";
 import { abilityStats } from "../config/abilityConfig.js";
+import { actorCue, actorHurt } from '../models/ActorCues.js';
 const clamp = (value) =>
   Math.max(-CONFIG.mapHalf + 1, Math.min(CONFIG.mapHalf - 1, value));
 export class RunSystem {
@@ -24,6 +25,7 @@ export class RunSystem {
   }
   update(run, dt, input) {
     run.events.length = 0;
+    run.actorCues.length = 0;
     if (run.phase === "intro") {
       run.introTime = Math.min(CONFIG.intro, run.introTime + dt);
       run.player.moving = false;
@@ -91,7 +93,9 @@ export class RunSystem {
       ) {
         p.hp = Math.max(0, p.hp - enemy.damage * 20 / (20 + run.playerArmor));
         p.invulnerable = 0.9;
-        run.events.push("hurt");
+        if (!enemy.charge && !enemy.dash && run.visualTime >= (enemy.attackCueUntil ?? 0))
+          actorCue(run, enemy, 'attack');
+        actorHurt(run, p);
         if (p.hp === 0) {
           run.phase = "defeat";
           return;

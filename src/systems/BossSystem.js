@@ -1,5 +1,6 @@
 import { CONFIG } from "../config/gameConfig.js";
 import { CAMPAIGN, ENEMY_STAGE_GROUPS } from "../config/campaignConfig.js";
+import { actorCue, actorHurt } from '../models/ActorCues.js';
 
 const clamp = n => Math.max(-CONFIG.mapHalf+2,Math.min(CONFIG.mapHalf-2,n));
 const ALTERNATE = {
@@ -32,6 +33,7 @@ export class BossSystem {
     const player=run.player,dx=player.x-arena.x,dz=player.z-arena.z,distance=Math.hypot(dx,dz);
     if(distance>arena.radius-.4 && distance>0){
       player.hp=Math.max(0,player.hp-arena.flameDamage*dt);
+      actorHurt(run, player);
       const factor=(arena.radius-.65)/distance;
       player.x=arena.x+dx*factor;player.z=arena.z+dz*factor;
       if(player.hp<=0)run.phase="defeat";
@@ -56,15 +58,17 @@ export class BossSystem {
       if(player.invulnerable<=0&&Math.hypot(player.x-oldX-vx*portion,player.z-oldZ-vz*portion)<1.15){
         player.hp=Math.max(0,player.hp-boss.damage*20/(20+run.playerArmor));
         player.invulnerable=.9;
-        run.events.push("hurt");
+        actorHurt(run, player);
       }
       boss.dash.left-=dt;
       if(boss.dash.left<=0)boss.dash=null;
     }
     run.bossHazards=run.bossHazards.filter(h=>{
       h.duration-=dt;
-      if(Math.hypot(player.x-h.x,player.z-h.z)<h.radius)
+      if(Math.hypot(player.x-h.x,player.z-h.z)<h.radius) {
         player.hp=Math.max(0,player.hp-h.damage*dt);
+        actorHurt(run, player);
+      }
       return h.duration>0;
     });
     if(player.hp<=0){run.phase="defeat";return;}
@@ -87,6 +91,7 @@ export class BossSystem {
     }
   }
   resolve(run,boss,tell){
+    actorCue(run, boss, 'attack');
     const pattern=tell.pattern;
     if(pattern==="ringGap"){
       const count=tell.phase===3?16:12,gap=tell.angle;

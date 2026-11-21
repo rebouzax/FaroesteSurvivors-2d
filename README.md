@@ -18,7 +18,7 @@ npm run dev
 
 Na seleção de fase, abra **Arsenal**, **Loja do Bento** ou **Bestiário** para preparar a partida. O Arsenal é liberado ao terminar a primeira partida.
 
-Em celulares e tablets compatíveis, o primeiro toque em **Novo jogo** solicita tela cheia. No iPhone ou iPad, use **Adicionar à Tela de Início** no Safari e abra pelo ícone para jogar sem a barra do navegador. O jogo se ajusta em retrato e paisagem. A opção **Resolução do jogo** permite começar com mais nitidez e continua se ajustando à carga da partida.
+Use **Configurações → Ativar tela cheia** para abrir ou sair da tela cheia do navegador. Em celulares e tablets compatíveis, o primeiro toque em **Novo jogo** também pode ativá-la. Se o Safari não oferecer tela cheia na aba, use **Adicionar à Tela de Início** e abra o jogo pelo ícone. Os menus se ajustam às duas orientações, e os catálogos maiores têm botões de página.
 
 Cada fase tem 15 minutos de sobrevivência, com ondas que se intensificam conforme o relógio avança. No modo História, conclua três missões e derrote três chefes na mesma partida. Vencer o Deserto libera a Mina e o Modo Livre. Vencer a Mina libera Elias Ferro, Ruth Faísca e Neco Pavio. O relógio congela durante confrontos com chefes e escolhas de cartas. O progresso fica salvo no navegador.
 

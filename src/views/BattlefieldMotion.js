@@ -8,7 +8,6 @@ export class BattlefieldMotion {
   constructor() {
     this.positions = new WeakMap();
     this.generation = 0;
-    this.hurtUntil = -Infinity;
     this.attack = null;
   }
 
@@ -41,10 +40,6 @@ export class BattlefieldMotion {
     sample.generation = this.generation;
   }
 
-  updated(run) {
-    if (run.events.includes('hurt')) this.hurtUntil = run.visualTime + .22;
-  }
-
   reset() {
     // Discard the pending interval when resuming from a modal or after a pause.
     this.generation++;
@@ -71,6 +66,6 @@ export class BattlefieldMotion {
     const attackAge = attack === this.attack && attack ? lerp(this.attackAge, attack.age, t) : attack?.age ?? 0;
     const distance = run.player.travel ?? 0;
     const travel = this.visualTime === undefined ? distance : lerp(this.playerTravel, distance, t);
-    return { time: visual + intro, visual, attackAge, travel, hurt: visual < this.hurtUntil };
+    return { time: visual + intro, visual, attackAge, travel, hurt: visual < (run.player.hurtCueUntil ?? -Infinity) };
   }
 }

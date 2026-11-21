@@ -1,4 +1,5 @@
 import { STAGE_WEATHER } from '../config/stageWeather.js';
+import { actorHurt } from '../models/ActorCues.js';
 export class WeatherSystem {
   update(run,dt) {
     const weather=run.weather;
@@ -35,7 +36,7 @@ export class WeatherSystem {
       if(s.age>=1.2&&!s.hit){
         s.hit=true;run.events.push('glass');
         this.hurtPlayer(run,s,25,s.radius);
-        for(const e of run.enemies)if(e.hp>0&&Math.hypot(e.x-s.x,e.z-s.z)<s.radius){e.hp-=120;e.hitFlash=.2;}
+        for(const e of run.enemies)if(e.hp>0&&Math.hypot(e.x-s.x,e.z-s.z)<s.radius){e.hp-=120;actorHurt(run,e);}
       }
     }
     weather.strikes=weather.strikes.filter(s=>s.age<1.65);
@@ -44,12 +45,12 @@ export class WeatherSystem {
       tornado.x+=tornado.vx*dt;
       tornado.z+=tornado.vz*dt;
       tornado.damageTimer=(tornado.damageTimer||0)-dt;
-      if(tornado.damageTimer<=0){tornado.damageTimer=.6;for(const e of run.enemies)if(e.hp>0&&Math.hypot(e.x-tornado.x,e.z-tornado.z)<2){e.hp-=24;e.hitFlash=.12;}}
+      if(tornado.damageTimer<=0){tornado.damageTimer=.6;for(const e of run.enemies)if(e.hp>0&&Math.hypot(e.x-tornado.x,e.z-tornado.z)<2){e.hp-=24;actorHurt(run,e);}}
       const player=run.player;
       if(Math.hypot(player.x-tornado.x,player.z-tornado.z)<2 && player.invulnerable<=0){
         player.hp=Math.max(0,player.hp-8*20/(20+run.playerArmor));
         player.invulnerable=0.9;
-        run.events.push("hurt");
+        actorHurt(run,player);
         if(player.hp===0)run.phase="defeat";
       }
     }
@@ -57,6 +58,6 @@ export class WeatherSystem {
   }
   hurtPlayer(run,point,damage,radius){
     const p=run.player;
-    if(p.invulnerable<=0&&Math.hypot(p.x-point.x,p.z-point.z)<radius){p.hp=Math.max(0,p.hp-damage*20/(20+run.playerArmor));p.invulnerable=.9;run.events.push('hurt');if(p.hp===0)run.phase='defeat';}
+    if(p.invulnerable<=0&&Math.hypot(p.x-point.x,p.z-point.z)<radius){p.hp=Math.max(0,p.hp-damage*20/(20+run.playerArmor));p.invulnerable=.9;actorHurt(run,p);if(p.hp===0)run.phase='defeat';}
   }
 }

@@ -8,6 +8,7 @@ import { enemyStats } from "../config/abilityConfig.js";
 import { ENEMY_STAGE_GROUPS } from "../config/campaignConfig.js";
 import { EARLY_ENEMIES } from "../config/earlyEnemies.js";
 import { ENEMY_WAVES } from "../config/playableStages.js";
+import { actorCue, actorHurt } from '../models/ActorCues.js';
 const clamp = (value) =>
   Math.max(-CONFIG.mapHalf + 1, Math.min(CONFIG.mapHalf - 1, value));
 const RANGED_ENEMIES = new Set(["bellRinger","lanternThief","windmillWraith","drownedProspector","barBanshee","railWitch","graveRider","sundownBandit",...Object.keys(FRONTIER_ENEMIES).filter(id=>FRONTIER_ENEMIES[id].behavior==="ranged")]);
@@ -294,6 +295,7 @@ export class EnemySystem {
               const speed=enemy.type==="skeleton"?8:9;
               const kind=AXE_THROWERS.has(enemy.type)?'axe':'orb';
               run.enemyShots.push({x:enemy.x,z:enemy.z,vx:ax/aimLength*speed,vz:az/aimLength*speed,age:0,kind,damage:enemy.type==="skeleton"?enemy.damage:Math.ceil(enemy.damage*.55)});
+              actorCue(run, enemy, 'attack');
               if(kind==='axe')enemy.throwRelease=.3;
             }
             enemy.attackFlash=.58;
@@ -326,20 +328,6 @@ export class EnemySystem {
     run.enemies = run.enemies.filter(
       (enemy) => enemy.type !== "vulture" || enemy.hp <= 0 || enemy.age < 10,
     );
-    for (const type of ["dog"]) {
-      run.enemyVoiceTimers[type] -= dt;
-      if (
-        run.enemyVoiceTimers[type] <= 0 &&
-        run.enemies.some(
-          (e) =>
-            e.type === type &&
-            Math.hypot(e.x - run.player.x, e.z - run.player.z) < 18,
-        )
-      ) {
-        run.events.push(type);
-        run.enemyVoiceTimers[type] = 7 + run.random() * 4;
-      }
-    }
     this.updateShots(run,dt);
   }
 
@@ -367,6 +355,10 @@ export class EnemySystem {
     charge.warning = Math.max(0, pending - dt);
     const travelDt = Math.max(0, dt - pending);
     if (travelDt > 0) {
+      if (!charge.launched) {
+        charge.launched = true;
+        actorCue(run, enemy, 'attack');
+      }
       enemy.x = clamp(enemy.x + charge.vx * travelDt);
       enemy.z = clamp(enemy.z + charge.vz * travelDt);
       charge.left -= travelDt;
@@ -390,7 +382,7 @@ export class EnemySystem {
         if (player.invulnerable <= 0) {
           player.hp = Math.max(0, player.hp - shot.damage * 20 / (20 + run.playerArmor));
           player.invulnerable = 0.9;
-          run.events.push("hurt");
+          actorHurt(run, player);
           if (player.hp <= 0) run.phase = "defeat";
         }
         return false;

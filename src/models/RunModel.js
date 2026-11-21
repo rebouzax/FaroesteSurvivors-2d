@@ -38,7 +38,6 @@ export class RunModel {
     this.merchant = null;
     this.merchantWindow = -1;
     this.vultureTimer = 0;
-    this.enemyVoiceTimers = { dog: 0 };
     this.phase = "intro";
     this.introTime = 0;
     this.time = 0;
@@ -69,6 +68,7 @@ export class RunModel {
     this.missionIndex = 0;
     this.missionOffers = [];
     this.events = [];
+    this.actorCues = [];
     this.kills = 0;
     this.coins = 0;
     this.nextId = 0;

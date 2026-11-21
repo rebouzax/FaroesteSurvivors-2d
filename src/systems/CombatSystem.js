@@ -2,6 +2,7 @@ import { CONFIG } from "../config/gameConfig.js";
 import { intercept, trackTargets } from './ChampionAim.js';
 import { abilityStats } from "../config/abilityConfig.js";
 import { CHAMPION_CARD_STYLES } from "../config/championCards.js";
+import { actorCue, actorHurt, championReleaseAge } from '../models/ActorCues.js';
 
 const TAU = Math.PI * 2;
 const angleTo = (from, to) => Math.atan2(to.z - from.z, to.x - from.x);
@@ -18,10 +19,10 @@ export function horseshoePositions(player, time, { count, radius }) {
 
 export class CombatSystem {
   rate(run){return run.attackRate*(run.abilities.lastStand&&run.player.hp/run.player.maxHp<0.35?1+run.abilities.lastStand*0.2:1);}
-  damage(enemy, amount, source = "") {
+  damage(run, enemy, amount, source = "") {
     const advantage = (enemy.weakness === source ? 1.8 : 1) * (enemy.counter === source ? 1.5 : 1);
     enemy.hp -= (amount * advantage * 20) / (20 + enemy.armor);
-    enemy.hitFlash = 0.12;
+    actorHurt(run, enemy);
   }
   closest(run, range) {
     let target = null;
@@ -88,6 +89,7 @@ export class CombatSystem {
     const first = run.primaryShots.length;
     run.primaryShots.push({x:p.x,z:p.z,startX:p.x,startZ:p.z,vx:Math.cos(angle)*distance/flight,vz:Math.sin(angle)*distance/flight,age:0,flight,returnAge:0,returnLeg:false,damage:stats.damage,pierce:99,hit:new Set(),kind:"boomerang"});
     this.queueCopies(run, 'primaryShots', first, angle, stats.range);
+    actorCue(run, p, 'card', { sound: 'throw', angle });
     run.boomerangTimer=Math.max(.8,stats.cooldown/this.rate(run));run.primaryFlash=.2;run.throwFlash=.65;run.events.push("throw");
   }
   pirateBomb(run,dt){
@@ -99,6 +101,7 @@ export class CombatSystem {
     const first=run.primaryShots.length;
     run.primaryShots.push({x:run.player.x,z:run.player.z,vx:dx/flight,vz:dz/flight,age:0,flight,damage:stats.damage*this.multiplier(run,'pirateBomb'),blastRadius:3.1*(stats.blastScale??1),pierce:1,hit:new Set(),kind:'dynamite'});
     this.queueCopies(run, 'primaryShots', first, angleTo(run.player, aim), stats.range);
+    actorCue(run, run.player, 'card', { sound: 'throw', angle: angleTo(run.player, aim) });
     run.pirateBombTimer=stats.cooldown/this.rate(run);run.throwFlash=.65;run.events.push('throw');
   }
   whip(run, dt) {
@@ -125,12 +128,13 @@ export class CombatSystem {
     const attack = run.attack;
     if (!attack) return;
     attack.age += dt;
-    if (!attack.hit && attack.age >= 0.18) {
+    if (!attack.hit && attack.age >= championReleaseAge(run.characterId)) {
       attack.hit = true;
       run.events.push("whip");
       const p = run.player;
       const target=this.closest(run,run.primaryRange+2);
       if(target)attack.angle=Math.atan2(target.z-p.z,target.x-p.x);
+      actorCue(run, p, 'attack', { angle: attack.angle });
       const damage = run.primaryDamage + run.whipRank * 3;
       this.strikeWhip(run, attack.angle, damage);
       this.queueCopies(run, 'whipEchoes', 0, attack.angle, run.primaryRange, 0, { damage });
@@ -146,7 +150,7 @@ export class CombatSystem {
       const distance = Math.hypot(dx, dz);
       const direction = (dx * forwardX + dz * forwardZ) / Math.max(.001, distance);
       if (distance > reach || direction <= (color ? .25 : -.1)) continue;
-      this.damage(enemy, damage, run.characterId);
+      this.damage(run, enemy, damage, run.characterId);
       if (color) run.impacts.push({ x: enemy.x, z: enemy.z, age: 0, color });
     }
   }
@@ -162,20 +166,21 @@ export class CombatSystem {
     const attack=run.attack;
     if(!attack)return;
     attack.age+=dt;
-    if(!attack.hit&&attack.age>=0.16){
+    if(!attack.hit&&attack.age>=championReleaseAge(run.characterId)){
       attack.hit=true;
       const p=run.player;
       const target=this.closest(run,run.primaryRange);
       const speed=["maria","rosa","teo"].includes(run.characterId)?25:["labuta","ruth"].includes(run.characterId)?21:run.characterId==="silas"?18:17;
       const aim=target?(hero.primary==='sword'?target:intercept(p,target,hero.primary==='dynamite'?15:hero.primary==='boomerang'?16:speed,hero.primary==='dynamite'?.28:0)):null;
       if(aim)attack.angle=Math.atan2(aim.z-p.z,aim.x-p.x);
+      actorCue(run, p, 'attack', { angle: attack.angle });
       const first=run.primaryShots.length;
       const count=hero.pellets || (run.characterId === "rosa" || run.characterId === "silas" ? 2 : run.characterId==="maria"&&run.abilities.boneStorm>2?2:1);
       if(hero.primary==='sword'){
         for(const enemy of run.enemies){
           const dx=enemy.x-p.x,dz=enemy.z-p.z,distance=Math.hypot(dx,dz);
           if(enemy.hp>0&&distance<=run.primaryRange&&(dx*Math.cos(attack.angle)+dz*Math.sin(attack.angle))/Math.max(.001,distance)>.15){
-            this.damage(enemy,run.primaryDamage+run.whipRank*3,run.characterId);run.impacts.push({x:enemy.x,z:enemy.z,age:0});
+            this.damage(run, enemy,run.primaryDamage+run.whipRank*3,run.characterId);run.impacts.push({x:enemy.x,z:enemy.z,age:0});
           }
         }
         run.primaryFlash=.25;run.events.push('whip');return;
@@ -281,7 +286,13 @@ export class CombatSystem {
       }
     }
     const dx = Math.cos(heading), dz = Math.sin(heading);
-    if (source.primary || list === 'whipEchoes') run.primaryEcho = { angle: heading, at: run.visualTime };
+    if (source.primary || list === 'whipEchoes') {
+      run.primaryEcho = { angle: heading, at: run.visualTime };
+      actorCue(run, player, 'attack', { angle: heading, gain: .65 });
+    } else {
+      const sound = bottle || flyingThrow ? 'throw' : list === 'projectiles' ? 'shot' : 'spectralCast';
+      actorCue(run, player, 'card', { sound, angle: heading, gain: .44 });
+    }
     if (list === 'whipEchoes') {
       this.strikeWhip(run, heading, source.damage, range, copyColor);
       run.whipEchoes.push({ x: player.x, z: player.z, angle: heading, age: 0, reach: range, color: copyColor });
@@ -329,7 +340,7 @@ export class CombatSystem {
           if(enemy.x<minX||enemy.x>maxX||enemy.z<minZ||enemy.z>maxZ||enemy.hp<=0||shot.hit.has(enemy.id))continue;
           const t=Math.max(0,Math.min(1,((enemy.x-x)*sx+(enemy.z-z)*sz)/length));
           if(Math.hypot(enemy.x-x-t*sx,enemy.z-z-t*sz)<(["boss","marshal"].includes(enemy.type)?1.35:.6)){
-            this.damage(enemy,shot.damage,"boomerang");shot.hit.add(enemy.id);run.impacts.push({x:enemy.x,z:enemy.z,age:0});
+            this.damage(run, enemy,shot.damage,"boomerang");shot.hit.add(enemy.id);run.impacts.push({x:enemy.x,z:enemy.z,age:0});
           }
         }
         shot.prevX=shot.x;shot.prevZ=shot.z;
@@ -340,11 +351,12 @@ export class CombatSystem {
         shot.x+=shot.vx*step;shot.z+=shot.vz*step;shot.age+=step;
         if(shot.age+1e-5<shot.flight)return true;
         const radius=shot.blastRadius??3.1;
+        actorCue(run, run.player, 'impact', { sound: 'blast', point: shot });
         run.pulses.push({x:shot.x,z:shot.z,radius,age:0,color:shot.copyColor});
         if(run.pulses.length>8)run.pulses.shift();
         for(const enemy of run.enemies){
           const distance=Math.hypot(enemy.x-shot.x,enemy.z-shot.z);
-          if(enemy.hp>0&&distance<=radius)this.damage(enemy,shot.damage*(distance<radius*.45?1:.68),"dynamite");
+          if(enemy.hp>0&&distance<=radius)this.damage(run, enemy,shot.damage*(distance<radius*.45?1:.68),"dynamite");
         }
         run.impacts.push({x:shot.x,z:shot.z,age:0});
         return false;
@@ -362,7 +374,7 @@ export class CombatSystem {
         if(enemy.hp<=0||shot.hit.has(enemy.id))continue;
         const t=Math.max(0,Math.min(1,((enemy.x-x)*sx+(enemy.z-z)*sz)/segmentLengthSquared));
         if(Math.hypot(enemy.x-x-t*sx,enemy.z-z-t*sz)<(["boss","marshal"].includes(enemy.type)?1.35:0.6)){
-          this.damage(enemy,shot.damage,shot.kind);
+          this.damage(run, enemy,shot.damage,shot.kind);
           shot.hit.add(enemy.id);
           run.impacts.push({x:enemy.x,z:enemy.z,age:0});
           if(--shot.pierce<=0)break;
@@ -394,6 +406,7 @@ export class CombatSystem {
             ...this.cardProjectile(run, 'pistol', stats, stats.damage, 26, 1.2),
           });
           this.queueCopies(run, 'projectiles', first, angle, stats.range);
+          actorCue(run, p, 'card', { sound: 'shot', angle });
           run.pistolTimer = Math.max(0.15, stats.cooldown / this.rate(run));
           run.shotFlash = 0.2;
           run.shotAngle = angle;
@@ -431,7 +444,7 @@ export class CombatSystem {
         }
       }
       if (target) {
-        this.damage(target, shotDamage(bullet, dt, nearest), "pistol");
+        this.damage(run, target, shotDamage(bullet, dt, nearest), "pistol");
         run.impacts.push({ x: target.x, z: target.z, age: 0, color: bullet.critical ? 0xffd367 : bullet.copyColor });
         return false;
       }
@@ -458,6 +471,7 @@ export class CombatSystem {
             damage: (stats.damage + (run.abilities.inferno ? abilityStats("inferno", run.abilities.inferno).damage : 0)) * this.multiplier(run, "molotov"),
           });
           this.queueCopies(run, 'bottles', first, angleTo(run.player, target), stats.range);
+          actorCue(run, run.player, 'card', { sound: 'throw', angle: angleTo(run.player, target) });
           run.molotovTimer = Math.max(0.7, stats.cooldown / run.attackRate);
           run.throwFlash = 0.65;
         }
@@ -468,7 +482,7 @@ export class CombatSystem {
       while (fire.nextTick <= Math.min(fire.age, fire.duration) + 1e-8) {
         for (const enemy of run.enemies)
           if (Math.hypot(enemy.x - fire.x, enemy.z - fire.z) <= fire.radius)
-            this.damage(enemy, fire.damage, run.abilities.inferno?"inferno":"molotov");
+            this.damage(run, enemy, fire.damage, run.abilities.inferno?"inferno":"molotov");
         fire.nextTick++;
       }
       if (fire.age >= fire.duration - 1e-8) {
@@ -476,7 +490,7 @@ export class CombatSystem {
         if (fraction > 1e-8)
           for (const enemy of run.enemies) {
             if (Math.hypot(enemy.x - fire.x, enemy.z - fire.z) <= fire.radius)
-              this.damage(enemy, fire.damage * fraction, run.abilities.inferno?"inferno":"molotov");
+              this.damage(run, enemy, fire.damage * fraction, run.abilities.inferno?"inferno":"molotov");
           }
         return false;
       }
@@ -510,7 +524,7 @@ export class CombatSystem {
       if (enemy.hp <= 0 || Math.hypot(enemy.x - run.player.x, enemy.z - run.player.z) > stats.radius + 0.8) continue;
       for (const { x, z } of positions) {
         if (Math.hypot(enemy.x - x, enemy.z - z) < 0.7 && time >= (enemy.orbitHitAt || 0)) {
-          this.damage(enemy, stats.damage * this.multiplier(run, "horseshoe"), "horseshoe");
+          this.damage(run, enemy, stats.damage * this.multiplier(run, "horseshoe"), "horseshoe");
           enemy.orbitHitAt = time + 0.45;
           run.impacts.push({ x: enemy.x, z: enemy.z, age: 0 });
           break;
@@ -530,6 +544,7 @@ export class CombatSystem {
         run.ghostShots.push({ x: p.x, z: p.z, vx: Math.cos(angle) * 15, vz: Math.sin(angle) * 15, age: 0,
           ...this.cardProjectile(run, 'ghostShot', stats, stats.damage, 15, 1.3), pierce: stats.pierce, hit: new Set() });
         this.queueCopies(run, 'ghostShots', first, angle, stats.range);
+        actorCue(run, p, 'card', { sound: 'spectralCast', angle });
         run.ghostTimer = stats.cooldown / run.attackRate;
         if (run.ghostShots.length > 48) run.ghostShots.shift();
       }
@@ -544,7 +559,7 @@ export class CombatSystem {
         if (enemy.hp <= 0 || shot.hit.has(enemy.id)) continue;
         const t = Math.max(0, Math.min(1, ((enemy.x - oldX) * sx + (enemy.z - oldZ) * sz) / (sx * sx + sz * sz || 1)));
         if (Math.hypot(enemy.x - oldX - t * sx, enemy.z - oldZ - t * sz) < (["boss","marshal"].includes(enemy.type) ? 1.35 : enemy.type === "dog" ? 0.7 : 0.5)) {
-          this.damage(enemy, shotDamage(shot, dt, t), "ghostShot");
+          this.damage(run, enemy, shotDamage(shot, dt, t), "ghostShot");
           shot.hit.add(enemy.id);
           shot.pierce--;
           run.impacts.push({ x: enemy.x, z: enemy.z, age: 0, color: shot.critical ? 0xffd367 : shot.copyColor });
@@ -565,7 +580,7 @@ export class CombatSystem {
         for (const enemy of run.enemies) {
           const dx = enemy.x - p.x, dz = enemy.z - p.z, distance = Math.hypot(dx, dz);
           if (enemy.hp <= 0 || distance > stats.radius) continue;
-          this.damage(enemy, stats.damage * this.multiplier(run, "requiem"), "requiem");
+          this.damage(run, enemy, stats.damage * this.multiplier(run, "requiem"), "requiem");
           if (distance > 0.01) {
             enemy.x = Math.max(-119, Math.min(119, enemy.x + dx / distance * stats.push));
             enemy.z = Math.max(-119, Math.min(119, enemy.z + dz / distance * stats.push));
@@ -594,6 +609,7 @@ export class CombatSystem {
           });
         }
         this.queueCopies(run, 'silverShots', first, 0, 0, count);
+        actorCue(run, run.player, 'card', { sound: 'spectralCast' });
         run.silverTimer = stats.cooldown / run.attackRate;
         if (run.silverShots.length > 80) run.silverShots.splice(0,run.silverShots.length-80);
       }
@@ -606,7 +622,7 @@ export class CombatSystem {
         const sx=shot.x-oldX, sz=shot.z-oldZ;
         const t=Math.max(0,Math.min(1,((enemy.x-oldX)*sx+(enemy.z-oldZ)*sz)/(sx*sx+sz*sz||1)));
         if (Math.hypot(enemy.x-oldX-t*sx,enemy.z-oldZ-t*sz)<(["boss","marshal"].includes(enemy.type)?1.35:0.52)) {
-          this.damage(enemy,shotDamage(shot, dt, t), shot.source||"silverRain");
+          this.damage(run, enemy,shotDamage(shot, dt, t), shot.source||"silverRain");
           run.impacts.push({x:enemy.x,z:enemy.z,age:0,color:shot.critical ? 0xffd367 : shot.copyColor});
           return false;
         }
@@ -627,6 +643,7 @@ export class CombatSystem {
         ...this.cardProjectile(run, 'boneStorm', stats, stats.damage, 15, 1.25),age:0,source:"boneStorm"});
     }
     this.queueCopies(run, 'silverShots', first, rotation, 0, stats.count);
+    actorCue(run, p, 'card', { sound: 'spectralCast' });
     if(run.silverShots.length>80)run.silverShots.splice(0,run.silverShots.length-80);
     run.boneTimer=stats.cooldown/this.rate(run);
   }
@@ -637,7 +654,7 @@ export class CombatSystem {
     const stats=abilityStats("lantern",Math.max(1,run.abilities.lantern));
     for (const enemy of run.enemies) {
       if (enemy.hp > 0 && Math.hypot(enemy.x-run.player.x,enemy.z-run.player.z)<=stats.radius)
-        this.damage(enemy,(stats.damage + (run.abilities.inferno ? abilityStats("inferno",run.abilities.inferno).damage : 0))*this.multiplier(run,"lantern"),run.abilities.inferno?"inferno":"lantern");
+        this.damage(run, enemy,(stats.damage + (run.abilities.inferno ? abilityStats("inferno",run.abilities.inferno).damage : 0))*this.multiplier(run,"lantern"),run.abilities.inferno?"inferno":"lantern");
     }
     run.lanternTimer += 1;
     if (run.lanternTimer < 0) run.lanternTimer=1;

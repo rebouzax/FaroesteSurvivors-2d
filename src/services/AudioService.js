@@ -16,7 +16,12 @@ const FILES = {
   purchase: new URL("../assets/audio/purchase.wav", import.meta.url),
   hurt: new URL("../assets/audio/hurt.wav", import.meta.url),
 };
-const FALLBACK = { shotgun: 'shot', rifle: 'shot', marshalShot: 'shot', crossbow: 'arrow', axe: 'arrow', throw: 'arrow' };
+const FALLBACK = {
+  'joao.attack': 'whip', 'indigo.attack': 'arrow', 'ada.attack': 'arrow',
+  'dynamite.attack': 'arrow', 'dog.attack': 'dog', 'vulture.attack': 'vulture',
+  throw: 'arrow', spectralCast: 'arrow', blast: 'shot',
+};
+const GUNSLINGERS = new Set(['maria.attack', 'rosa.attack', 'labuta.attack', 'elias.attack', 'ruth.attack']);
 const MUSIC = {
   menu: new URL("../assets/audio/the-unmarked-cabin.mp3", import.meta.url),
   desert: new URL("../assets/audio/seven-black-graves.mp3", import.meta.url),
@@ -126,9 +131,12 @@ export class AudioService {
     this.combatLoading = this.loadBuffer('combat', COMBAT_BANK).finally(() => { this.combatLoading = null; });
     return this.combatLoading;
   }
-  updateRun(run, dt) {
-    if (this.enabled && !this.paused) this.runAudio.update(run, dt);
+  updateRun(run) {
+    if (this.enabled && !this.paused) this.runAudio.update(run);
     this.setFire(run.phase === 'playing' && (run.fires.length > 0 || run.bossHazards.length > 0));
+  }
+  presentRun(run, frame) {
+    if (this.enabled && !this.paused) this.runAudio.present(run, frame);
   }
   async test(lang='en') {
     const running = await this.unlock({ retry: true });
@@ -165,7 +173,8 @@ export class AudioService {
     )
       return;
     const choices = this.buffers.combat && Object.hasOwn(clips, type) && clips[type];
-    const buffer = choices ? this.buffers.combat : this.buffers[FALLBACK[type] || type];
+    const fallback = FALLBACK[type] ?? (GUNSLINGERS.has(type) ? 'shot' : type.endsWith('.hurt') ? 'hurt' : type);
+    const buffer = choices ? this.buffers.combat : this.buffers[fallback];
     if (!buffer) return;
     if (this.active.size >= MAX_VOICES) {
       let disposable;
@@ -312,7 +321,7 @@ export class AudioService {
   }
   stopEffects() {
     for (const voice of this.active.values()) voice.stop();
-    this.runAudio.run = null;
+    this.runAudio.reset();
     this.setFire(false);
   }
   suspend() {

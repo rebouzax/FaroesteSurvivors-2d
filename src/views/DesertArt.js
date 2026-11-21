@@ -38,7 +38,7 @@ export function baseArt(withMine = false) {
 }
 
 export function desertArt(withMine = false) {
-  if (!battleAtlases.has(withMine)) battleAtlases.set(withMine, Promise.all([baseArt(), load(actorAnimationUrl), withMine && mineArt()]).then(([base, actorArt, mine]) => {
+  if (!battleAtlases.has(withMine)) battleAtlases.set(withMine, Promise.all([baseArt(), load(actorAnimationUrl), withMine ? mineArt() : null]).then(([base, actorArt, mine]) => {
     const cell = ENEMY_FRAME_SIZE;
     const rows = [...DESERT_CHAMPIONS.map(id => id + 'Pose'), ...ENEMY_CELLS];
     const columns = 8;

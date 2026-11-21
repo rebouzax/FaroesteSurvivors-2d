@@ -24,79 +24,102 @@ const SKITTER = [0, 4, 1, 5, 2, 6, 3, 7];
 const WALK = [0, 1, 2, 3];
 const TWO_STEP = [0, 1];
 const MOTH_FLAP = [0, 1, 2, 1];
-const cycle = (frames, time) => frames[Math.floor(time) % frames.length];
+// Each mask marks the exact sprite slots where feet land or wings push down.
+const GAIT = {
+  bat: [FLAP, 23, 1 << 4],
+  vulture: [VULTURE_FLAP, 12, 1 << 4],
+  giantBat: [BOSS_FLAP, 11, 1 << 4],
+  dog: [GALLOP, 4.4, 0b001001],
+  skeleton: [STRIDE, 3.8, 0b0101],
+  fireChupacabra: [STRIDE, 2.7, 0b0101],
+  shadowMarshal: [STRIDE, 3, 0b0101],
+  treasure: [SKITTER, 5.3, 0b00010001],
+  miner: [WALK, 3, 0b0101],
+  mineSpider: [WALK, 6, 0b0101],
+  mineSkull: [TWO_STEP, 5, 0b10],
+  blindCrawler: [TWO_STEP, 4.5, 0b01],
+  treasureRat: [TWO_STEP, 4.5, 0b01],
+  shovelMiner: [TWO_STEP, 1.9, 0b11],
+  minerGeneral: [TWO_STEP, 1.9, 0b11],
+  giantMoth: [MOTH_FLAP, 11, 1 << 2],
+};
 const smooth = value => {
   const t = Math.max(0, Math.min(1, value));
   return t * t * (3 - 2 * t);
 };
 
-export function enemyPose(name, enemy, time, travel, distance, bossTell, point = enemy) {
+export function enemyPose(name, enemy, time, travel, distance, bossTell, point = enemy, visual = time) {
   const flight = FLIGHT[name];
   const seeded = enemy.id * .731;
-  let frame, dive = 0;
+  const strike = visual < (enemy.attackCueUntil ?? -Infinity);
+  let frame, contact, dive = 0;
   switch (name) {
     case 'bat':
-      frame = cycle(FLAP, time * 23 + seeded);
+      if (strike) frame = 6;
       break;
     case 'dog':
       if (enemy.charge) frame = enemy.charge.warning > 0 ? 3 : enemy.charge.left > .25 ? 7 : 6;
-      else frame = distance < 1.25 ? 3 : cycle(GALLOP, travel * 4.4 + seeded);
+      else if (strike || distance < 1.25) frame = 3;
       break;
     case 'vulture': {
       const targetDistance = Math.hypot(point.x - (enemy.targetX ?? point.x), point.z - (enemy.targetZ ?? point.z));
       dive = enemy.warning > 0 ? 0 : smooth((10 - targetDistance) / 5);
-      frame = dive > .68 ? 3 : dive > .3 ? 7 : cycle(VULTURE_FLAP, time * 12 + seeded);
+      if (strike || dive > .3) frame = strike || dive > .68 ? 3 : 7;
       break;
     }
     case 'skeleton':
       if (enemy.throwRelease > 0) frame = enemy.throwRelease > .14 ? 3 : 7;
+      else if (strike) frame = 3;
       else if (enemy.aimTimer > 0) frame = enemy.aimTimer > .28 ? 6 : 2;
-      else frame = cycle(STRIDE, travel * 3.8 + seeded);
       break;
     case 'giantBat':
       if (bossTell) frame = bossTell.delay > .48 ? 6 : 3;
       else if (enemy.releaseFlash > 0) frame = enemy.releaseFlash > .23 ? 7 : 5;
-      else frame = cycle(BOSS_FLAP, time * 11 + seeded);
+      else if (strike) frame = 7;
       break;
     case 'fireChupacabra':
       if (bossTell) frame = bossTell.delay > .48 ? 2 : 6;
       else if (enemy.dash || enemy.releaseFlash > 0) frame = enemy.releaseFlash > .2 || enemy.dash?.left > .25 ? 7 : 3;
-      else frame = cycle(STRIDE, travel * 2.7 + seeded);
+      else if (strike) frame = 7;
       break;
     case 'shadowMarshal':
-      if (enemy.releaseFlash > 0) frame = enemy.releaseFlash > .26 ? 3 : 7;
+      if (enemy.releaseFlash > 0 || strike) frame = strike || enemy.releaseFlash > .26 ? 3 : 7;
       else if (bossTell) frame = bossTell.delay > .44 ? 6 : 2;
-      else frame = cycle(STRIDE, travel * 3 + seeded);
-      break;
-    case 'treasure':
-      frame = cycle(SKITTER, travel * 5.3 + seeded);
       break;
     case 'miner':
-      frame = enemy.attackFlash > .3 ? 3 : cycle(WALK, travel * 3 + seeded);
+      if (strike || enemy.attackFlash > .3) frame = 3;
       break;
     case 'mineSpider':
-      frame = cycle(WALK, travel * 6 + seeded);
+      if (strike) frame = 3;
       break;
     case 'mineSkull':
-      frame = enemy.aimTimer > 0 ? 1 : cycle(TWO_STEP, time * 5 + seeded);
+      if (strike || enemy.aimTimer > 0) frame = 1;
       break;
     case 'blindCrawler':
-    case 'treasureRat':
-      frame = enemy.charge?.left > 0 && !(enemy.charge.warning > 0) ? 1 : cycle(TWO_STEP, travel * 4.5 + seeded);
+      if (strike || enemy.charge?.launched) frame = 1;
       break;
     case 'shovelMiner':
     case 'minerGeneral':
-      frame = bossTell ? 2 : enemy.releaseFlash > 0 || enemy.dash ? 3 : cycle(TWO_STEP, travel * 1.9 + seeded);
+      if (bossTell) frame = 2;
+      else if (strike || enemy.releaseFlash > 0 || enemy.dash) frame = 3;
       break;
     case 'giantMoth':
-      frame = bossTell || enemy.dash ? 3 : cycle(MOTH_FLAP, time * 11);
+      if (bossTell || strike || enemy.dash) frame = 3;
       break;
-    default:
-      return { frame: name, size: 30, shadow: 24, lift: 0, anchorY: 0 };
+  }
+  if (frame === undefined) {
+    const gait = GAIT[name];
+    if (!gait) return { frame: name, size: 30, shadow: 24, lift: 0, anchorY: 0 };
+    const [frames, rate, accents] = gait;
+    const step = Math.floor((flight ? time : travel) * rate + seeded);
+    const slot = step % frames.length;
+    frame = frames[slot];
+    if (accents & (1 << slot)) contact = step;
   }
   const sweep = flight ? Math.sin(time * (name === 'bat' ? 9 : 4) + seeded) * 2 : 0;
   return {
     frame: (name === 'treasureRat' ? 'blindCrawler' : name) + frame,
+    contact, airborne: Boolean(flight), diveAttack: name === 'vulture' && dive > .68,
     size: SIZE[name],
     shadow: flight?.shadow ?? SIZE[name] * .6,
     lift: (flight?.altitude ?? 0) + sweep - dive * 11,

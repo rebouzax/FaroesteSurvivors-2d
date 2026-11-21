@@ -1,6 +1,7 @@
 import './style.css';
+import './views/bestiary.css';
 import { AudioService } from './services/AudioService.js';
-import { enterTouchFullscreen, usesTouchLayout } from './services/Fullscreen.js';
+import { enterTouchFullscreen, fullscreenState, toggleFullscreen, usesTouchLayout } from './services/Fullscreen.js';
 import { InputService } from './services/InputService.js';
 import { ProfileService } from './services/ProfileService.js';
 import { AppViewModel } from './viewmodels/AppViewModel.js';
@@ -10,6 +11,7 @@ import { RenderQuality } from './views/RenderQuality.js';
 import { BattlefieldMotion } from './views/BattlefieldMotion.js';
 import { CHAMPION_CELLS, MINE_CHAMPIONS } from './views/ChampionAnimation.js';
 import { MAPS } from './config/mapConfig.js';
+import { bestiaryPageSize, menuPageSize, showSingleOffer } from './views/MenuPagination.js';
 
 const root = document.querySelector('#app');
 const audio = new AudioService();
@@ -18,10 +20,44 @@ const vm = new AppViewModel(profile, audio, CHAMPION_CELLS);
 let session;
 let loadingRun;
 let shownPage;
+let fullscreenHandled = false;
+let fullscreenPending = false;
+let pageSize = menuPageSize(window.innerHeight);
+let singleOffer = showSingleOffer(window.innerWidth, window.innerHeight);
+let gallerySize = bestiaryPageSize(window.innerWidth, window.innerHeight);
 const portraitsPromises = new Map();
 const screen = new ScreenView(root, action => {
   const focus = document.activeElement?.dataset?.action;
-  if (action === 'modes' || action === 'begin') void enterTouchFullscreen();
+  if (action === 'fullscreen' && vm.page === 'settings') {
+    if (fullscreenPending) return;
+    fullscreenHandled = fullscreenPending = true;
+    // Call within the button's click to retain the browser's user activation.
+    void toggleFullscreen().then(outcome => {
+      fullscreenPending = false;
+      screen.updateFullscreen(fullscreenState(), outcome === 'denied');
+    });
+    return;
+  }
+  if (action.startsWith('catalog:') && screen.changeCatalog(action)) {
+    if (vm.page === 'game') screen.overlay(vm.run, true);
+    else render(vm);
+    screen.restoreCatalogFocus(focus);
+    return;
+  }
+  if (vm.page === 'bestiary') {
+    if (action.startsWith('creature:')) {
+      screen.openCreature(profile.data, action.slice('creature:'.length));
+      return;
+    }
+    if (action === 'close-creature') {
+      screen.closeCreature();
+      return;
+    }
+  }
+  if (action === 'modes' && !fullscreenHandled && usesTouchLayout()) {
+    fullscreenHandled = true;
+    void enterTouchFullscreen();
+  }
   vm.action(action);
   if (focus === action && !['game', 'menu'].includes(vm.page) &&
       /^(hero|map|buy|buy-card|deck|forge):/.test(action)) {
@@ -32,6 +68,25 @@ const screen = new ScreenView(root, action => {
   vm.setting(key, value);
   root.querySelector(`[data-setting="${CSS.escape(key)}"]`)?.focus({ preventScroll: true });
 });
+const updateFullscreen = () => screen.updateFullscreen(fullscreenState());
+document.addEventListener('fullscreenchange', updateFullscreen);
+document.addEventListener('webkitfullscreenchange', updateFullscreen);
+window.addEventListener('resize', () => {
+  const nextSize = menuPageSize(window.innerHeight);
+  const nextOffer = showSingleOffer(window.innerWidth, window.innerHeight);
+  const nextGallery = bestiaryPageSize(window.innerWidth, window.innerHeight);
+  if (pageSize === nextSize && singleOffer === nextOffer && gallerySize === nextGallery) return;
+  singleOffer = nextOffer;
+  pageSize = nextSize;
+  screen.pageSize = pageSize;
+  screen.singleOffer = singleOffer;
+  screen.bestiaryPageSize = gallerySize = nextGallery;
+  if (['arsenal', 'shop', 'bestiary'].includes(vm.page)) render(vm);
+  else if (vm.page === 'game' && session && ['merchant', 'upgrade', 'mission-card'].includes(vm.run.model.phase)) screen.overlay(vm.run, true);
+});
+screen.pageSize = pageSize;
+screen.singleOffer = singleOffer;
+screen.bestiaryPageSize = gallerySize;
 audio.setPreferences(profile.data.sound, profile.data.music);
 
 for (const name of ['pointerdown', 'keydown', 'click']) {
@@ -48,6 +103,7 @@ function render(app, force = false) {
   const data = app.profile.data;
   const previousPage = shownPage;
   shownPage = app.page;
+  if (previousPage !== app.page) screen.resetCatalog();
   if (app.page !== 'menu') screen.stopMenuMotion?.();
   if (app.page === 'game') {
     if (session?.vm === app.run) {
@@ -67,23 +123,23 @@ function render(app, force = false) {
     modes: () => screen.modes(data),
     heroes: () => screen.heroes(data, app.selected, app.mode),
     stage: () => screen.stage(app.mode, app.selected, app.profile, app.stageId),
-    settings: () => screen.settings(data, profile.available),
+    settings: () => screen.settings(data, profile.available, fullscreenState()),
     shop: () => screen.shop(profile),
     arsenal: () => screen.arsenal(data, app.message, app.selected),
-    bestiary: () => screen.bestiary(data, app.stageId),
+    bestiary: () => screen.bestiary(data),
     exit: () => screen.shell('O deserto espera.', '<p>Você pode fechar esta aba ou voltar ao menu.</p>', 'menu', 'settings-shell'),
   };
   pages[app.page]();
   if (previousPage !== app.page) window.scrollTo(0, 0);
-  if (['modes', 'heroes', 'bestiary'].includes(app.page)) preparePortraits();
+  if (['modes', 'heroes'].includes(app.page)) preparePortraits();
 }
 
 function preparePortraits() {
-  const withMine = Boolean(profile.data.storyClears.mine || (vm.page === 'bestiary' && vm.stageId === 'mine'));
+  const withMine = Boolean(profile.data.storyClears.mine);
   if (portraitsPromises.has(withMine)) return;
   portraitsPromises.set(withMine, baseArt(withMine).then(art => {
     Object.assign(screen.portraits, art.portraits);
-    if (['heroes', 'bestiary'].includes(vm.page)) {
+    if (vm.page === 'heroes') {
       const focus = document.activeElement?.dataset?.action;
       render(vm);
       if (focus) root.querySelector(`[data-action="${CSS.escape(focus)}"]`)?.focus({ preventScroll: true });
@@ -157,7 +213,6 @@ async function mount(gameVm) {
           while (accumulator >= step && active()) {
             motion.capture(run);
             gameVm.update(step, direction);
-            motion.updated(run);
             accumulator -= step;
           }
         }
@@ -165,17 +220,18 @@ async function mount(gameVm) {
       const enteredModal = run.phase !== phase && !active();
       if (enteredModal) {
         input.clear();
-        audio.setPaused(true);
       }
       const paintDue = nextPaint === null || now + .6 >= nextPaint;
       if (!view.ready || game.resized || enteredModal || (active() && paintDue)) {
         game.resized = false;
         const paintDt = paintedAt === null ? 0 : Math.min(.1, (now - paintedAt) / 1000);
-        view.draw(run, paintDt, motion, active() ? accumulator / step : 1);
+        const frame = view.draw(run, paintDt, motion, active() ? accumulator / step : 1);
+        if (!gameVm.paused) audio.presentRun(run, frame);
         paintedAt = now;
         nextPaint = nextPaint === null || Math.abs(now - nextPaint) > paintInterval * 2
           ? now + paintInterval : nextPaint + paintInterval;
       }
+      if (enteredModal) audio.setPaused(true);
       hudElapsed += dt;
       if (hudElapsed >= .08 || run.phase !== phase) {
         hudElapsed = 0;

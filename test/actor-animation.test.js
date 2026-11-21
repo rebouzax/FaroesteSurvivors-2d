@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { RunModel } from '../src/models/RunModel.js';
+import { actorHurt } from '../src/models/ActorCues.js';
 import { BattlefieldMotion } from '../src/views/BattlefieldMotion.js';
 import { CHAMPION_CELLS, championPose } from '../src/views/ChampionAnimation.js';
 
@@ -10,8 +11,8 @@ test('Every playable champion uses its own idle, stride, attack and hurt frames'
     const name = state => championPose(id, { ...idle, ...state }).frame;
     assert.equal(name(), id + 'Pose0');
     assert.equal(name({ moving: true }), id + 'Pose1');
-    assert.equal(name({ moving: true, travel: .4 }), id + 'Pose2');
-    assert.equal(name({ moving: true, travel: .8 }), id + 'Pose3');
+    assert.equal(name({ moving: true, travel: .8 }), id + 'Pose2');
+    assert.equal(name({ moving: true, travel: 1.6 }), id + 'Pose3');
     assert.equal(name({ attack: { hit: false }, attackAge: .12 }), id + 'Pose4');
     assert.equal(name({ attack: { hit: true }, attackAge: .19 }), id + 'Pose5');
     assert.equal(name({ attack: { hit: true }, attackAge: .33 }), id + 'Pose6');
@@ -53,15 +54,12 @@ test('Damage is retained through catch-up updates without confusing invulnerabil
   const motion = new BattlefieldMotion();
   run.player.invulnerable = 1.5;
   motion.capture(run);
-  motion.updated(run);
   assert.equal(motion.clock(run, 1).hurt, false);
 
-  run.events = ['hurt'];
-  motion.updated(run);
+  actorHurt(run, run.player);
   run.events = [];
   run.visualTime += .1;
   motion.capture(run);
-  motion.updated(run);
   assert.equal(motion.clock(run, 1).hurt, true);
   run.visualTime += .18;
   assert.equal(motion.clock(run, 1).hurt, false);

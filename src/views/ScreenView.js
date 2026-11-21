@@ -1,10 +1,11 @@
 import logo from '../assets/logo-faroeste-survivors.webp';
-import { abilityMaxLevel, enemyStats } from '../config/abilityConfig.js';
-import { CAMPAIGN, ENEMY_STAGE_GROUPS, ENEMY_WEAKNESSES, HERO_REWARDS, MISSION_HERO_REWARDS, heroUnlocked, stageUnlocked, unlockedGameplayCards } from '../config/campaignConfig.js';
+import { abilityMaxLevel } from '../config/abilityConfig.js';
+import { CAMPAIGN, HERO_REWARDS, MISSION_HERO_REWARDS, heroUnlocked, stageUnlocked, unlockedGameplayCards } from '../config/campaignConfig.js';
 import { CHARACTERS } from '../config/characterConfig.js';
 import { championCardNote, CHAMPION_CARD_STYLES } from '../config/championCards.js';
 import { BENTO_CARDS, DECK_MAX, DECK_MIN, FUSIONS, STARTER_CARDS, fusionUnlocked } from '../config/deckConfig.js';
 import { CONFIG } from '../config/gameConfig.js';
+import { bestiaryPosition } from '../models/Bestiary.js';
 import { MAPS } from '../config/mapConfig.js';
 import { PLAYABLE_STAGES, STAGE_PRESENTATION } from '../config/playableStages.js';
 import { TREASURE_CREATURES } from '../config/treasureCreatures.js';
@@ -13,6 +14,8 @@ import { localizedCardDescription, t } from '../services/I18n.js';
 import { CHAMPION_CELLS } from './ChampionAnimation.js';
 import { MenuBackdrop } from './MenuBackdrop.js';
 import { abilityCardArt } from './AbilityCardArt.js';
+import { bestiaryCatalog, bestiaryDossier } from './BestiaryView.js';
+import { menuPage } from './MenuPagination.js';
 
 const weapons = { whip: 'Chicote vaqueiro', revolver: 'Revólver', shotgun: 'Escopeta', bow: 'Arco', dual: 'Dois revólveres', crossbow: 'Besta', rifle: 'Rifle', sawedoff: 'Escopeta serrada', dynamite: 'Dinamite' };
 const missionNames = { bat: 'Abata morcegos', crate: 'Recolha caixas de suprimentos', skeleton: 'Abata esqueletos', mineSpider: 'Abata aranhas das galerias', miner: 'Abata mineiros da noite' };
@@ -34,11 +37,20 @@ const cardNote = (hero, id) => {
   const note = championCardNote(hero, id);
   return note ? `<span class="card-affinity">${note}</span>` : '';
 };
+const icon = glyph => `<span class="menu-icon" aria-hidden="true">${glyph}</span>`;
+const fullscreenMessage = {
+  available: '',
+  active: '',
+  standalone: 'O jogo já está aberto em tela cheia.',
+  unsupported: 'Tela cheia indisponível nesta aba. No Safari, use Adicionar à Tela de Início.',
+};
 
 export class ScreenView {
   constructor(root, action, setting) {
     this.root = root;
     this.portraits = {};
+    this.pageSize = 3;
+    this.resetCatalog();
     root.addEventListener('click', event => {
       const target = event.target.closest('[data-action]');
       if (target && !target.disabled) action(target.dataset.action);
@@ -47,6 +59,50 @@ export class ScreenView {
       const { setting: key } = event.target.dataset;
       if (key) setting(key, event.target.type === 'checkbox' ? event.target.checked : event.target.value);
     });
+  }
+
+  resetCatalog() {
+    this.catalogTab = null;
+    this.catalogOffset = 0;
+    this.creatureId = null;
+  }
+
+  changeCatalog(action) {
+    const [, kind, value] = action.split(':');
+    if (kind === 'tab') {
+      this.catalogTab = value;
+      this.catalogOffset = 0;
+    } else if (kind === 'offset' && Number.isFinite(Number(value))) {
+      this.catalogDirection = Number(value) > this.catalogOffset ? 'next' : 'prev';
+      this.catalogOffset = Number(value);
+    }
+    else return false;
+    return true;
+  }
+
+  restoreCatalogFocus(action) {
+    if (!action) return;
+    const [, kind, value] = action.split(':');
+    const selector = kind === 'tab' ? `[data-action="catalog:tab:${CSS.escape(value)}"]` : `[data-pager="${this.catalogDirection}"]`;
+    const focus = this.root.querySelector(selector);
+    (focus && !focus.disabled ? focus : this.root.querySelector('[data-pager]:not(:disabled)'))?.focus({ preventScroll: true });
+  }
+
+  catalog(groups, summary = '', status = '', size = this.pageSize) {
+    const active = groups.find(group => group.id === this.catalogTab) ?? groups[0];
+    const page = menuPage(active.items, this.catalogOffset, size);
+    const tabs = groups.length > 1 ? `<nav class="catalog-tabs" aria-label="Categorias">${groups.map(group =>
+      button('catalog:tab:' + group.id, group.label, `aria-pressed="${active === group}"`)).join('')}</nav>` : '';
+    const pager = page.pages > 1 ? `<nav class="catalog-pager" aria-label="Páginas">
+      ${button('catalog:offset:' + (page.index - 1) * size, '‹', `data-pager="prev" aria-label="Página anterior" ${page.index === 0 ? 'disabled' : ''}`)}
+      <span aria-live="polite">${page.index + 1} / ${page.pages}</span>
+      ${button('catalog:offset:' + (page.index + 1) * size, '›', `data-pager="next" aria-label="Próxima página" ${page.index + 1 >= page.pages ? 'disabled' : ''}`)}
+    </nav>` : '';
+    return `<div class="catalog">
+      ${tabs || summary ? `<div class="catalog-bar">${tabs}${summary}</div>` : ''}
+      <div class="item-list catalog-items">${page.items.join('') || '<p class="catalog-empty">Nenhum item nesta categoria.</p>'}</div>
+      ${pager || status ? `<div class="catalog-footer">${pager}${status}</div>` : ''}
+    </div>`;
   }
 
   portrait(id, alt = '') {
@@ -61,9 +117,9 @@ export class ScreenView {
       <section class="menu-panel" aria-label="Menu principal">
         <h1><img src="${logo}" alt="Faroeste Survivors"></h1>
         <nav class="main-nav" aria-label="Jogo">
-          ${button('modes', 'Novo jogo', 'class="primary"')}
-          ${button('settings', 'Configurações')}
-          ${button('exit', 'Sair')}
+          ${button('modes', `${icon('✦')}<span>Novo jogo</span><span class="menu-arrow" aria-hidden="true">›</span>`, 'class="primary"')}
+          ${button('settings', `${icon('⚙')}<span>Configurações</span>`)}
+          ${button('exit', `${icon('↪')}<span>Sair</span>`)}
         </nav>
       </section>`;
     this.menuBackdrop = new MenuBackdrop(this.root.querySelector('.menu-motion'), wind);
@@ -75,29 +131,31 @@ export class ScreenView {
   }
 
   shell(title, content, back = 'menu', className = '', label = '') {
-    this.root.className = 'selection-screen';
+    this.root.className = `selection-screen selection-${className || 'default'}`;
     this.root.innerHTML = `
       <div class="menu-landscape" aria-hidden="true"></div>
-      <header class="sub-header">${button(back, '← &nbsp; Voltar', 'class="back-button"')}</header>
       <section class="page-shell ${className}">
-        ${label ? `<div class="kicker">${label}</div>` : ''}
-        <h1 tabindex="-1">${title}</h1>${content}
+        <header class="sub-header">
+          ${button(back, `${icon('‹')}<span>Voltar</span>`, 'class="back-button"')}
+          <div class="page-heading"><h1 tabindex="-1">${title}</h1>${label ? `<span class="kicker">${label}</span>` : ''}</div>
+        </header>
+        <div class="page-content">${content}</div>
       </section>`;
     this.root.querySelector('h1').focus({ preventScroll: true });
   }
 
   modes(data) {
     const free = data.storyClears.desert;
-    this.shell('Escolha o modo', `<div class="mode-grid">
-      ${button('story', '<b class="mode-icon" aria-hidden="true">✷</b><strong>História</strong><p>Conclua missões e derrote chefes para liberar novas fases, campeões e cartas.</p><small>Iniciar história ↗</small>', 'class="option-tile"')}
-      ${button('free', `<b class="mode-icon" aria-hidden="true">◇</b><strong>Modo livre</strong><p>Jogue as fases liberadas com os campeões e cartas que você já conquistou.</p><small>${free ? 'Iniciar modo livre ↗' : 'Conclua o Deserto no modo História'}</small>`, free ? 'class="option-tile"' : 'class="option-tile" disabled')}
-    </div>`);
+    this.shell('Modo de jogo', `<div class="mode-grid">
+      ${button('story', '<strong>História</strong><span>Missões, chefes e novos desbloqueios.</span>', 'class="option-tile mode-story"')}
+      ${button('free', `<strong>Modo livre</strong><span>${free ? 'Sobreviva nas fases liberadas.' : 'Disponível após vencer o Deserto na História.'}</span>`, free ? 'class="option-tile mode-free"' : 'class="option-tile mode-free" disabled')}
+    </div>`, 'menu', 'mode-shell');
   }
 
   heroes(data, selected, mode) {
     const hero = CHARACTERS[selected];
     const unlocked = heroUnlocked(data, selected);
-    this.shell('Escolha seu campeão', `
+    this.shell('Campeões', `
       <div class="hero-layout">
         <div class="hero-preview">${unlocked ? this.portrait(selected) : '<strong aria-hidden="true">?</strong>'}</div>
         <div class="hero-info">
@@ -116,15 +174,15 @@ export class ScreenView {
         return button('hero:' + id, `${available ? this.portrait(id) : '<b aria-hidden="true">?</b>'}<span>${CHARACTERS[id].name.split(' ')[0]}</span>`,
           `aria-label="${CHARACTERS[id].name}${available ? '' : ' (bloqueado)'}" aria-pressed="${id === selected}"`);
       }).join('')}</div>
-      <div class="page-actions">${button('stage', 'Escolher fase &nbsp; ↗', unlocked ? 'class="primary"' : 'class="primary" disabled')}</div>`,
-    'modes', 'hero-shell', mode === 'story' ? 'MODO HISTÓRIA' : 'MODO LIVRE');
+      <div class="page-actions">${button('stage', 'Escolher fase &nbsp; ›', unlocked ? 'class="primary"' : 'class="primary" disabled')}</div>`,
+    'modes', 'hero-shell', mode === 'story' ? 'História' : 'Modo livre');
   }
 
   stage(mode, id, profile, mapId = 'desert') {
     const unlocked = profile.data.completedRuns > 0;
     const entry = stageUnlocked(profile.data, mapId);
     const spec = CAMPAIGN[mapId];
-    this.shell('Escolha a fase', `
+    this.shell('Fases', `
       <nav class="stage-picker" aria-label="Fases">${PLAYABLE_STAGES.map(stage => button('map:' + stage,
         `<small>${STAGE_PRESENTATION[stage].number}</small><span>${stageName(stage)}</span>`,
         `aria-pressed="${mapId === stage}"`)).join('')}</nav>
@@ -132,8 +190,8 @@ export class ScreenView {
         <div class="stage-picture stage-picture-${mapId}" aria-hidden="true"></div>
         <div class="stage-body">
           <div class="stage-meta"><span>◷ &nbsp; ${CONFIG.duration / 60} minutos</span><span>✷ &nbsp; ${spec.bosses.length} chefes</span>${mode === 'story' ? `<span>† &nbsp; ${spec.missions.length} missões</span>` : ''}</div>
-          <p>${STAGE_PRESENTATION[mapId].description}</p>
-          ${entry ? '' : '<p class="stage-tool-note">Conclua o Deserto dos Esquecidos no modo História para abrir a mina.</p>'}
+          <p class="stage-desc">${STAGE_PRESENTATION[mapId].description}</p>
+          ${entry ? '' : '<p class="stage-tool-note">Vença o Deserto na História para abrir a Mina.</p>'}
           <p class="stage-champion">Campeão <b>${CHARACTERS[id].name}</b></p>
         </div>
       </div>
@@ -143,17 +201,36 @@ export class ScreenView {
         ${button('bestiary', '<b aria-hidden="true">†</b><span>Bestiário</span>')}
       </nav>
       ${unlocked ? '' : '<p class="stage-tool-note" id="arsenal-requirement">Termine uma partida para liberar o Arsenal.</p>'}
-      <div class="page-actions">${button('begin', 'Iniciar fase &nbsp; ↗', `class="primary" ${entry ? '' : 'disabled'}`)}</div>`, 'heroes', 'stage-shell');
+      <div class="page-actions">${button('begin', 'Iniciar fase &nbsp; ›', `class="primary" ${entry ? '' : 'disabled'}`)}</div>`, 'heroes', 'stage-shell');
   }
 
-  settings(data, available) {
-    const toggles = [['sound', 'Efeitos sonoros'], ['music', 'Música'], ['wind', 'Partículas de poeira']];
-    this.shell('Configurações', `<div class="settings-list">
-      ${toggles.map(([id, title]) => `<label>${title}<input type="checkbox" data-setting="${id}" ${data[id] ? 'checked' : ''}></label>`).join('')}
-      <label>Resolução do jogo <select data-setting="graphics"><option value="normal" ${data.graphics === 'normal' ? 'selected' : ''}>Automática</option><option value="high" ${data.graphics === 'high' ? 'selected' : ''}>Priorizar nitidez</option></select></label>
-      </div>
-      <details class="controls" open><summary>Controles</summary><p>Use <kbd>WASD</kbd>, <kbd>↑ ↓ ← →</kbd> ou toque e arraste para andar. Os ataques são automáticos. Pressione <kbd>Esc</kbd> para pausar.</p></details>
+  settings(data, available, fullscreen) {
+    const toggles = [['sound', 'Efeitos sonoros'], ['music', 'Música'], ['wind', 'Poeira']];
+    const showControls = this.catalogTab === 'controls';
+    const tabs = `<nav class="catalog-tabs" aria-label="Configurações">
+      ${button('catalog:tab:general', 'Geral', `aria-pressed="${!showControls}"`)}
+      ${button('catalog:tab:controls', 'Controles', `aria-pressed="${showControls}"`)}
+    </nav>`;
+    this.shell('Configurações', `${tabs}${showControls ? `<dl class="controls">
+      <div><dt>Andar</dt><dd><kbd>WASD</kbd> ou <kbd>setas</kbd> · toque e arraste</dd></div>
+      <div><dt>Atacar</dt><dd>Automático</dd></div>
+      <div><dt>Pausar</dt><dd><kbd>Esc</kbd> ou botão de pausa</dd></div>
+      </dl>` : `<div class="settings-list">
+      ${toggles.map(([id, title]) => `<label>${title}<input type="checkbox" role="switch" data-setting="${id}" ${data[id] ? 'checked' : ''}></label>`).join('')}
+      <label>Resolução <select data-setting="graphics"><option value="normal" ${data.graphics === 'normal' ? 'selected' : ''}>Automática</option><option value="high" ${data.graphics === 'high' ? 'selected' : ''}>Alta nitidez</option></select></label>
+      <div class="fullscreen-setting">${button('fullscreen', `${icon('⛶')}<span id="fullscreen-label"></span>`, 'class="primary" aria-describedby="fullscreen-status"')}
+        <p id="fullscreen-status" role="status"></p></div>
+      </div>`}
       <p id="save-status" role="status">${available ? '' : 'O navegador bloqueou o salvamento local.'}</p>`, 'menu', 'settings-shell');
+    this.updateFullscreen(fullscreen);
+  }
+
+  updateFullscreen(state, denied = false) {
+    const label = this.root.querySelector('#fullscreen-label');
+    if (!label) return;
+    label.textContent = state === 'active' ? 'Sair da tela cheia' : state === 'standalone' ? 'Tela cheia' : 'Ativar tela cheia';
+    label.closest('button').disabled = state === 'standalone' || state === 'unsupported';
+    this.root.querySelector('#fullscreen-status').textContent = denied ? 'O navegador recusou o pedido de tela cheia.' : fullscreenMessage[state] ?? '';
   }
 
   shop(profile) {
@@ -167,7 +244,8 @@ export class ScreenView {
     });
     const permanentCards = Object.entries(BENTO_CARDS).filter(([, spec]) => PLAYABLE_STAGES.includes(spec.after)).map(([id, spec]) =>
       `<article class="list-item illustrated-item">${abilityCardArt(id)}<div><h3>${nameOf(id)}</h3><p>${localizedCardDescription('pt', id, 1)}</p></div>${button('buy-card:' + id, data.bentoCards.includes(id) ? 'Comprada' : money(spec.price), data.storyClears[spec.after] && !data.bentoCards.includes(id) && data.coins >= spec.price ? '' : 'disabled')}</article>`);
-    this.shell('Loja do Bento', `<p class="balance">Moedas do perfil ${money(data.coins)}</p><div class="item-list">${[...upgrades, ...permanentCards].join('')}</div>`, 'stage', 'list-shell');
+    const groups = [{ id: 'upgrades', label: 'Melhorias', items: upgrades }, { id: 'cards', label: 'Cartas', items: permanentCards }];
+    this.shell('Loja do Bento', this.catalog(groups, `<p class="balance" aria-label="Moedas do perfil">${money(data.coins)}</p>`), 'stage', 'list-shell');
   }
 
   arsenal(data, message = '', hero) {
@@ -175,29 +253,46 @@ export class ScreenView {
     const owned = [...new Set([...STARTER_CARDS, ...unlockedGameplayCards(data), ...data.forgedCards, ...data.bentoCards])];
     const cards = owned.map(id => `<article class="list-item illustrated-item">${abilityCardArt(id)}
       <div><h3>${nameOf(id)}</h3><p>${localizedCardDescription('pt', id, 1, 1, hero)}</p>${cardNote(hero, id)}</div>
-      ${button('deck:' + id, data.deck.includes(id) ? 'Equipada' : 'Equipar', `aria-pressed="${data.deck.includes(id)}" ${canEdit ? '' : 'disabled'}`)}</article>`).join('');
+      ${button('deck:' + id, data.deck.includes(id) ? 'Equipada' : 'Equipar', `aria-pressed="${data.deck.includes(id)}" ${canEdit ? '' : 'disabled'}`)}</article>`);
     const recipes = Object.entries(FUSIONS).filter(([, spec]) => !spec.after || PLAYABLE_STAGES.includes(spec.after)).map(([id, spec]) =>
       `<article class="list-item illustrated-item">${abilityCardArt(id)}<div><h3>${nameOf(id)}</h3><p>${spec.ingredients.map(card => nameOf(card)).join(' + ')}</p></div>
-        ${button('forge:' + id, data.forgedCards.includes(id) ? 'Forjada' : 'Forjar', canEdit && fusionUnlocked(data, id) && spec.ingredients.every(card => data.deck.includes(card)) && !data.forgedCards.includes(id) ? '' : 'disabled')}</article>`).join('');
-    this.shell('Arsenal', `<p>${canEdit ? `${data.deck.length} cartas equipadas · Mínimo ${DECK_MIN}, máximo ${DECK_MAX}` : 'Termine uma partida para editar o baralho.'}</p>
-      <p id="arsenal-status" class="inline-status" role="status">${message}</p><div class="item-list">${cards}</div><h2 class="list-heading">Fusões</h2><div class="item-list">${recipes}</div>`, 'stage', 'list-shell');
+        ${button('forge:' + id, data.forgedCards.includes(id) ? 'Forjada' : 'Forjar', canEdit && fusionUnlocked(data, id) && spec.ingredients.every(card => data.deck.includes(card)) && !data.forgedCards.includes(id) ? '' : 'disabled')}</article>`);
+    const groups = [{ id: 'cards', label: 'Cartas', items: cards }, { id: 'fusions', label: 'Fusões', items: recipes }];
+    const summary = `<p class="catalog-summary" title="Mínimo ${DECK_MIN}, máximo ${DECK_MAX}">${data.deck.length}/${DECK_MAX} equipadas</p>`;
+    const status = message ? `<p id="arsenal-status" class="inline-status" role="status">${message}</p>` : '';
+    this.shell('Arsenal', this.catalog(groups, summary, status), 'stage', 'list-shell');
   }
 
-  bestiary(data, mapId = 'desert') {
-    const bosses = CAMPAIGN[mapId].bosses;
-    const enemies = [...ENEMY_STAGE_GROUPS[mapId], ...bosses.map(boss => boss.id)];
-    this.shell('Bestiário', `<p>Derrote as criaturas da fronteira para registrar suas fraquezas.</p>
-      <div class="bestiary-grid">${enemies.map(id => {
-        const defeated = data.discoveries.enemies.includes(id) || data.discoveries.bosses.includes(id);
-        const known = defeated || data.discoveries.encounteredBosses.includes(id);
-        const boss = bosses.find(spec => spec.id === id);
-        const stats = boss || enemyStats(id, 0);
-        return `<article class="creature-card"><div>${known ? this.portrait(id) : '<b aria-hidden="true">?</b>'}</div>
-          <h3>${known ? nameOf(id, boss ? 'boss' : 'enemy') : 'Desconhecido'}</h3>
-          <p>${defeated ? nameOf(boss?.weakness || ENEMY_WEAKNESSES[id]) : known ? 'Encontrado' : 'Ainda não registrado'}</p>
-          ${known ? `<small>${stats.hp} Vida · ${stats.damage} Dano</small>` : ''}
-        </article>`;
-      }).join('')}</div>`, 'stage', 'list-shell', stageName(mapId));
+  bestiary(data) {
+    const { groups, found, total } = bestiaryCatalog(data.discoveries);
+    const summary = `<p class="catalog-summary">${found}/${total} descobertos</p>`;
+    const gallery = this.catalog(groups, summary, '', this.bestiaryPageSize ?? 4);
+    this.shell('Bestiário', `${gallery}<dialog id="bestiary-detail" class="bestiary-detail" aria-labelledby="bestiary-title"></dialog>`,
+      'stage', 'bestiary-shell');
+    const dialog = this.root.querySelector('#bestiary-detail');
+    dialog.addEventListener('close', () => {
+      if (!dialog.isConnected || dialog.open) return;
+      const id = this.creatureId;
+      this.creatureId = null;
+      if (id) this.root.querySelector(`[data-action="creature:${CSS.escape(id)}"]`)?.focus({ preventScroll: true });
+    });
+    if (this.creatureId) this.openCreature(data, this.creatureId);
+  }
+
+  openCreature(data, id) {
+    const dialog = this.root.querySelector('#bestiary-detail');
+    const contents = bestiaryDossier(data.discoveries, id);
+    if (!dialog || !contents) return;
+    this.creatureId = id;
+    // Keep this creature on the visible gallery page after rotation.
+    this.catalogOffset = bestiaryPosition(id);
+    dialog.innerHTML = contents;
+    if (!dialog.open) dialog.showModal();
+    dialog.querySelector('.bestiary-close').focus({ preventScroll: true });
+  }
+
+  closeCreature() {
+    this.root.querySelector('#bestiary-detail')?.close();
   }
 
   game(run) {
@@ -305,6 +400,7 @@ export class ScreenView {
     const run = vm.model, dialog = this.refs['run-dialog'];
     const phase = vm.confirmExit ? 'confirm' : vm.paused ? 'pause' : run.phase;
     if (!force && this.pendingDialog === phase) return;
+    if (phase === 'merchant' && this.pendingDialog !== phase) this.resetCatalog();
     this.pendingDialog = phase;
     if (['intro', 'playing'].includes(phase)) {
       if (dialog.open) dialog.close();
@@ -318,20 +414,30 @@ export class ScreenView {
     const heading = (label, title) => `<span class="kicker">${label}</span><h2 id="run-title">${title}</h2>`;
     if (phase === 'upgrade' || phase === 'mission-card') {
       const offers = phase === 'upgrade' ? run.cardOffers : run.missionOffers;
-      dialog.innerHTML = heading(phase === 'upgrade' ? `NÍVEL ${run.player.level}` : 'RECOMPENSA', 'Escolha uma carta') +
-        `<div class="card-grid">${offers.map((id) => card(id, phase === 'upgrade' ? 'choose' : 'mission-card')).join('')}</div>`;
+      if (this.offerSet !== offers) {
+        this.offerSet = offers;
+        this.resetCatalog();
+      }
+      const items = offers.map(id => card(id, phase === 'upgrade' ? 'choose' : 'mission-card'));
+      const contents = this.singleOffer
+        ? `<div class="single-offer">${this.catalog([{ id: 'offers', items }], '', '', 1)}</div>`
+        : `<div class="card-grid">${items.join('')}</div>`;
+      dialog.innerHTML = heading(phase === 'upgrade' ? `NÍVEL ${run.player.level}` : '', 'Escolha uma carta') + contents;
     } else if (phase === 'mission-reward') {
       dialog.innerHTML = heading('MISSÃO CUMPRIDA', 'Escolha sua recompensa') + `<div class="card-grid">
         ${button('reward:coins', '<b class="card-icon">◉</b><strong>25 moedas</strong>', 'class="upgrade-card"')}
         ${button('reward:health', '<b class="card-icon">♥</b><strong>Tônico</strong><p>+20 de vida máxima e recupera 40 de vida.</p>', 'class="upgrade-card"')}
         ${button('reward:card', '<b class="card-icon">♠</b><strong>Carta de combate</strong><p>Escolha uma carta para fortalecer sua partida.</p>', 'class="upgrade-card"')}</div>`;
     } else if (phase === 'merchant') {
-      dialog.innerHTML = heading('MERCADOR DO DESERTO', 'Bento') + `<p>Moedas da partida ${money(run.coins)}</p><div class="item-list merchant-list">${run.merchantCards.map(id => {
+      const items = run.merchantCards.map(id => {
         const price = temporaryPrice(run.shopPurchases[id]);
         const title = { whip: 'Arma principal', haste: 'Velocidade de ataque', spur: 'Velocidade de movimento' }[id] || nameOf(id);
         const cardArt = Object.hasOwn(run.abilities, id) ? abilityCardArt(id) : '';
         return `<article class="list-item ${cardArt ? 'illustrated-item' : ''}">${cardArt}<div><h3>${title}</h3><small>${run.abilities[id] ? `Nível ${run.abilities[id]} / ${abilityMaxLevel(id)}` : `Compras ${run.shopPurchases[id]}`}</small></div>${button('run-buy:' + id, money(price), run.coins >= price ? '' : 'disabled')}</article>`;
-      }).join('')}</div><div class="page-actions">${button('leave-merchant', 'Voltar à partida', 'class="primary"')}</div>`;
+      });
+      dialog.innerHTML = heading('', 'Loja do Bento') +
+        this.catalog([{ id: 'merchant', items }], `<p class="balance">Moedas da partida ${money(run.coins)}</p>`, '', Math.min(3, this.pageSize)) +
+        `<div class="page-actions">${button('leave-merchant', 'Voltar à partida', 'class="primary"')}</div>`;
     } else if (phase === 'pause') {
       dialog.innerHTML = heading(stageName(run.mapId), 'Partida pausada') + `<div class="dialog-buttons">
         ${button('pause', 'Continuar', 'class="primary"')}${button('ask-exit', 'Voltar ao menu')}</div>`;
@@ -349,7 +455,7 @@ export class ScreenView {
         ${!vm.profile.available ? '<p>O navegador bloqueou o salvamento. O progresso vale nesta sessão.</p>' : ''}
         <div class="dialog-buttons">${button('retry', 'Jogar de novo', 'class="primary"')}${button('stage', 'Seleção de fase')}${button('menu', 'Menu principal')}</div>`;
     }
-    dialog.className = ['upgrade', 'mission-card', 'mission-reward'].includes(phase) ? 'wide-dialog' : '';
+    dialog.className = ['upgrade', 'mission-card', 'mission-reward'].includes(phase) ? 'wide-dialog' : phase === 'merchant' ? 'merchant-dialog' : '';
     if (!dialog.open) dialog.showModal();
     dialog.querySelector('button:not(:disabled)')?.focus({ preventScroll: true });
   }

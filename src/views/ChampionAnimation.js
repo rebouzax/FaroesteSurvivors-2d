@@ -1,3 +1,5 @@
+import { championReleaseAge } from '../models/ActorCues.js';
+
 export const DESERT_CHAMPIONS = Object.freeze(['joao', 'maria', 'labuta', 'indigo', 'rosa', 'ada']);
 export const MINE_CHAMPIONS = Object.freeze(['elias', 'ruth', 'dynamite']);
 export const CHAMPION_CELLS = Object.freeze([...DESERT_CHAMPIONS, ...MINE_CHAMPIONS]);
@@ -18,17 +20,21 @@ const walk = [1, 2, 3, 2];
 export function championPose(id, { moving, travel, attack, attackAge = 0, hurt = false, echoAge }) {
   const style = styles[id];
   if (!style) return { frame: id, size: 32, shadow: 24, anchorY: 0, recoil: 0 };
-  const release = id === 'joao' ? .18 : .16;
+  const release = championReleaseAge(id);
   const sinceRelease = echoAge ?? Math.max(0, attackAge - release);
   const striking = (echoAge !== undefined || attack?.hit) && sinceRelease < style.follow;
-  let frame;
-  if (striking) frame = 5;
-  else if (hurt) frame = 7;
+  const step = Math.floor(travel * style.stride * .5);
+  let frame, contact;
+  if (hurt) frame = 7;
+  else if (striking) frame = 5;
   else if (attack) frame = attack.hit ? 6 : 4;
-  else if (moving) frame = walk[Math.floor(travel * style.stride) % walk.length];
+  else if (moving) {
+    frame = walk[step % walk.length];
+    if (step % 2 === 0) contact = step / 2;
+  }
   else frame = 0;
   return {
-    frame: `${id}Pose${frame}`, size: style.size, shadow: style.shadow, anchorY: .075,
-    recoil: striking ? style.recoil * (1 - sinceRelease / style.follow) : 0,
+    frame: `${id}Pose${frame}`, contact, size: style.size, shadow: style.shadow, anchorY: .075,
+    recoil: striking && !hurt ? style.recoil * (1 - sinceRelease / style.follow) : 0,
   };
 }
