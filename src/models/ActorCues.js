@@ -1,8 +1,9 @@
 export const championReleaseAge = id => id === 'joao' ? .18 : .16;
+const treasureIds = { mine: 'treasureRat', town: 'treasureZombie' };
 
 export function actorSoundId(run, actor) {
   if (actor === run.player) return run.characterId;
-  if (actor.treasure) return run.mapId === 'mine' ? 'treasureRat' : 'treasure';
+  if (actor.treasure) return treasureIds[run.mapId] ?? 'treasure';
   return actor.bossId || actor.type;
 }
 

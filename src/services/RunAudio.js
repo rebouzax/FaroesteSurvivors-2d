@@ -1,8 +1,9 @@
 import { desertSurfaceAt } from '../models/DesertLayout.js';
 import { mineSurfaceAt } from '../models/MineLayout.js';
+import { townSurfaceAt } from '../models/TownLayout.js';
 
-const SURFACES = { desert: desertSurfaceAt, mine: mineSurfaceAt };
-const MOVEMENT_RANGE = { bat: 13, vulture: 18, giantBat: 28, giantMoth: 26, mineSkull: 12 };
+const SURFACES = { desert: desertSurfaceAt, mine: mineSurfaceAt, town: townSurfaceAt };
+const MOVEMENT_RANGE = { bat: 13, vulture: 18, giantBat: 28, giantMoth: 26, mineSkull: 12, wraith: 15, boneHound: 27 };
 const GENERIC_EVENTS = { glass: 'glass', level: 'level', 'boss-down': 'bossDown' };
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 

@@ -62,14 +62,14 @@ export class SpriteBatch {
     this.count = 0;
   }
 
-  sprite(name, x, y, width, { height, flip = false, color = 0xffffff, alpha = 1, angle = 0, anchorY = 0 } = {}) {
+  sprite(name, x, y, width, { height, flip = false, color = 0xffffff, alpha = 1, angle = 0, anchorY = 0, shearY = 0 } = {}) {
     const frame = this.frames[name];
     if (!frame) return;
     const h = height ?? Math.max(1, Math.round(width * frame.h / frame.w));
-    this.quad(frame, x, y, width, h, angle ? Math.cos(angle) : 1, angle ? Math.sin(angle) : 0, color, alpha, flip, anchorY);
+    this.quad(frame, x, y, width, h, angle ? Math.cos(angle) : 1, angle ? Math.sin(angle) : 0, color, alpha, flip, anchorY, shearY);
   }
 
-  quad(frame, x, y, width, height, c, s, color, alpha, flip = false, anchorY = 0) {
+  quad(frame, x, y, width, height, c, s, color, alpha, flip = false, anchorY = 0, shearY = 0) {
     if (this.count >= MAX_QUADS || alpha <= 0) return;
     let tint = this.colors.get(color);
     if (!tint) {
@@ -79,11 +79,12 @@ export class SpriteBatch {
     const { r, g, b } = tint;
     const { left, right, top, bottom } = frame;
     const data = this.vertices.array;
+    const rise = s + shearY;
     let offset = this.count * 4 * STRIDE;
     for (const [u, v] of corners) {
       const dx = (u - .5) * width, dy = (v - anchorY) * height;
       data[offset] = x + dx * c - dy * s;
-      data[offset + 1] = y + dx * s + dy * c;
+      data[offset + 1] = y + dx * rise + dy * c;
       // The batch is a flat layer. Z is zero in the backing buffer.
       data[offset + 3] = Boolean(u) !== flip ? right : left;
       data[offset + 4] = v ? top : bottom;

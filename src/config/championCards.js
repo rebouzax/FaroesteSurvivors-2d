@@ -76,6 +76,23 @@ export const CHAMPION_CARD_STYLES = {
       pirateBomb: { blastScale: 1.25, note: 'A explosão da carta tem 25% mais alcance com Neco.' },
     },
   },
+  silas: {
+    description: 'Abra espaço com duas facas. As lâminas retornantes recarregam mais cedo e a Bala Fantasma pode acertar críticos.',
+    echoInterval: .095, echoColor: 0x9cd6ca,
+    cards: {
+      returningBlade: { scale: { cooldown: .8 }, note: 'Silas reduz em 20% o intervalo dos arremessos.' },
+      lunarReturn: { scale: { cooldown: .8 }, note: 'Silas reduz em 20% o intervalo dos arremessos.' },
+      ghostShot: { useCritical: true, note: 'A Bala Fantasma usa a chance de crítico de Silas.' },
+    },
+  },
+  teo: {
+    description: 'Cubra os flancos com a carabina. A Pistola ganha alcance e a Chuva de Prata lança mais dois disparos.',
+    echoInterval: .122, echoColor: 0xf0c777,
+    cards: {
+      pistol: { scale: { range: 1.18 }, flightScale: 1.18, note: 'Teo mira e dispara 18% mais longe.' },
+      silverRain: { add: { count: 2 }, note: 'Teo dispara mais duas balas na Chuva de Prata.' },
+    },
+  },
 };
 
 export function championAbilityStats(characterId, id, level) {

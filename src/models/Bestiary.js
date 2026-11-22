@@ -2,11 +2,13 @@ import { CAMPAIGN, ENEMY_STAGE_GROUPS, ENEMY_WEAKNESSES } from '../config/campai
 import { enemyStats } from '../config/abilityConfig.js';
 import { PLAYABLE_STAGES } from '../config/playableStages.js';
 
-const beasts = new Set(['bat', 'dog', 'vulture', 'giantBat', 'fireChupacabra', 'mineSpider', 'blindCrawler', 'giantMoth']);
-const groupOf = id => beasts.has(id) ? 'beasts' : id === 'mineSkull' ? 'spirits' : 'undead';
+const beasts = new Set(['bat', 'dog', 'vulture', 'giantBat', 'fireChupacabra', 'mineSpider', 'blindCrawler', 'giantMoth', 'boneHound']);
+const spirits = new Set(['mineSkull', 'wraith']);
+const groupOf = id => beasts.has(id) ? 'beasts' : spirits.has(id) ? 'spirits' : 'undead';
 const portraitOrder = {
   desert: ['bat', 'dog', 'vulture', 'skeleton', 'giantBat', 'fireChupacabra', 'shadowMarshal'],
   mine: ['miner', 'mineSpider', 'mineSkull', 'blindCrawler', 'shovelMiner', 'giantMoth', 'minerGeneral'],
+  town: ['wraith', 'townZombie', 'townGhoul', 'headlessOutlaw', 'boneHound', 'boneSinger', 'zombieDeputy'],
 };
 const entryFor = (stage, id, boss) => ({ stage, id, boss, tile: portraitOrder[stage].indexOf(id), group: groupOf(id) });
 

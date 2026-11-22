@@ -1,6 +1,6 @@
 import logo from '../assets/logo-faroeste-survivors.webp';
 import { abilityMaxLevel } from '../config/abilityConfig.js';
-import { CAMPAIGN, HERO_REWARDS, MISSION_HERO_REWARDS, heroUnlocked, stageUnlocked, unlockedGameplayCards } from '../config/campaignConfig.js';
+import { CAMPAIGN, HERO_REWARDS, MISSION_HERO_REWARDS, heroUnlocked, previousStage, stageUnlocked, unlockedGameplayCards } from '../config/campaignConfig.js';
 import { CHARACTERS } from '../config/characterConfig.js';
 import { championCardNote, CHAMPION_CARD_STYLES } from '../config/championCards.js';
 import { BENTO_CARDS, DECK_MAX, DECK_MIN, FUSIONS, STARTER_CARDS, fusionUnlocked } from '../config/deckConfig.js';
@@ -17,9 +17,9 @@ import { abilityCardArt } from './AbilityCardArt.js';
 import { bestiaryCatalog, bestiaryDossier } from './BestiaryView.js';
 import { menuPage } from './MenuPagination.js';
 
-const weapons = { whip: 'Chicote vaqueiro', revolver: 'Revólver', shotgun: 'Escopeta', bow: 'Arco', dual: 'Dois revólveres', crossbow: 'Besta', rifle: 'Rifle', sawedoff: 'Escopeta serrada', dynamite: 'Dinamite' };
-const missionNames = { bat: 'Abata morcegos', crate: 'Recolha caixas de suprimentos', skeleton: 'Abata esqueletos', mineSpider: 'Abata aranhas das galerias', miner: 'Abata mineiros da noite' };
-const weatherNames = { sand: 'Tempestade de areia', tornado: 'Tornados no deserto', 'mission-failed': 'O prazo da missão acabou' };
+const weapons = { whip: 'Chicote vaqueiro', revolver: 'Revólver', shotgun: 'Escopeta', bow: 'Arco', dual: 'Dois revólveres', crossbow: 'Besta', rifle: 'Rifle', sawedoff: 'Escopeta serrada', dynamite: 'Dinamite', knives: 'Facas de arremesso', repeater: 'Carabina de repetição' };
+const missionNames = { bat: 'Abata morcegos', crate: 'Recolha caixas de suprimentos', skeleton: 'Abata esqueletos', mineSpider: 'Abata aranhas das galerias', miner: 'Abata mineiros da noite', townGhoul: 'Abata ghouls foragidos', townZombie: 'Abata zumbis do saloon', headlessOutlaw: 'Abata pistoleiros sem cabeça' };
+const weatherNames = { sand: 'Tempestade de areia', tornado: 'Tornados', rain: 'Tempestade elétrica', 'mission-failed': 'O prazo da missão acabou' };
 const markerGlyphs = { crate: '▣', merchant: '◆', treasure: '✦' };
 const button = (action, title, options = '') => `<button type="button" data-action="${action}" ${options}>${title}</button>`;
 const money = (amount) => `<span class="money"><span aria-hidden="true">◉</span> ${amount}</span>`;
@@ -181,6 +181,7 @@ export class ScreenView {
   stage(mode, id, profile, mapId = 'desert') {
     const unlocked = profile.data.completedRuns > 0;
     const entry = stageUnlocked(profile.data, mapId);
+    const preceding = previousStage(mapId);
     const spec = CAMPAIGN[mapId];
     this.shell('Fases', `
       <nav class="stage-picker" aria-label="Fases">${PLAYABLE_STAGES.map(stage => button('map:' + stage,
@@ -191,7 +192,7 @@ export class ScreenView {
         <div class="stage-body">
           <div class="stage-meta"><span>◷ &nbsp; ${CONFIG.duration / 60} minutos</span><span>✷ &nbsp; ${spec.bosses.length} chefes</span>${mode === 'story' ? `<span>† &nbsp; ${spec.missions.length} missões</span>` : ''}</div>
           <p class="stage-desc">${STAGE_PRESENTATION[mapId].description}</p>
-          ${entry ? '' : '<p class="stage-tool-note">Vença o Deserto na História para abrir a Mina.</p>'}
+          ${entry ? '' : `<p class="stage-tool-note">Vença ${MAPS[preceding].name} na História para abrir esta fase.</p>`}
           <p class="stage-champion">Campeão <b>${CHARACTERS[id].name}</b></p>
         </div>
       </div>

@@ -1,4 +1,4 @@
-export const PLAYABLE_STAGES = Object.freeze(['desert', 'mine']);
+export const PLAYABLE_STAGES = Object.freeze(['desert', 'mine', 'town']);
 
 export const STAGE_PRESENTATION = {
   desert: {
@@ -8,6 +8,10 @@ export const STAGE_PRESENTATION = {
   mine: {
     number: '02',
     description: 'Siga os trilhos pelas galerias abandonadas e enfrente o que se esconde entre os veios de carvão.',
+  },
+  town: {
+    number: '03',
+    description: 'Atravesse o saloon, a cadeia e a capela de uma cidade abandonada durante uma tempestade.',
   },
 };
 
@@ -29,5 +33,14 @@ export const ENEMY_WAVES = {
     { at: 360, population: 98, weights: { miner: 5, mineSpider: 6, blindCrawler: 5, mineSkull: 5 } },
     { at: 555, population: 118, weights: { miner: 7, mineSpider: 6, blindCrawler: 6, mineSkull: 6 } },
     { at: 720, population: 144, weights: { miner: 7, mineSpider: 6, blindCrawler: 7, mineSkull: 7 } },
+  ],
+  town: [
+    { at: 0, population: 26, weights: { wraith: 10 } },
+    { at: 32, population: 42, weights: { wraith: 6, townGhoul: 9 } },
+    { at: 110, population: 58, weights: { wraith: 5, townGhoul: 9, townZombie: 6 } },
+    { at: 215, population: 76, weights: { wraith: 4, townGhoul: 7, townZombie: 8, headlessOutlaw: 4 } },
+    { at: 330, population: 94, weights: { wraith: 3, townGhoul: 5, townZombie: 13, headlessOutlaw: 5 } },
+    { at: 540, population: 116, weights: { wraith: 4, townGhoul: 6, townZombie: 8, headlessOutlaw: 11 } },
+    { at: 710, population: 138, weights: { wraith: 5, townGhoul: 8, townZombie: 9, headlessOutlaw: 8 } },
   ],
 };

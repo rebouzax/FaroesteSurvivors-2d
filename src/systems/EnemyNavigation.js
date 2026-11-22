@@ -28,8 +28,11 @@ function hitsBox(x, z, dx, dz, halfX, halfZ) {
 
 function hitsProp(x, z, dx, dz, prop, padding) {
   const px = x - prop.x, pz = z - prop.z;
-  if (prop.halfX === undefined) return hitsCircle(px, pz, dx, dz, prop.radius + padding);
-  const sin = Math.sin(prop.rotation || 0), cos = Math.cos(prop.rotation || 0);
+  const extent = (prop.halfX === undefined ? prop.radius : prop.halfX + prop.halfZ) + padding;
+  if (Math.min(px, px + dx) >= extent || Math.max(px, px + dx) <= -extent ||
+      Math.min(pz, pz + dz) >= extent || Math.max(pz, pz + dz) <= -extent) return false;
+  if (prop.halfX === undefined) return hitsCircle(px, pz, dx, dz, extent);
+  const sin = prop.rotation ? Math.sin(prop.rotation) : 0, cos = prop.rotation ? Math.cos(prop.rotation) : 1;
   const localX = px * cos - pz * sin, localZ = px * sin + pz * cos;
   const localDX = dx * cos - dz * sin, localDZ = dx * sin + dz * cos;
   if (hitsBox(localX, localZ, localDX, localDZ, prop.halfX + padding, prop.halfZ)
@@ -63,6 +66,7 @@ export class EnemyNavigation {
   constructor() {
     this.detours = new WeakMap();
     this.sightLines = new WeakMap();
+    this.headings = new WeakMap();
   }
 
   seesPlayer(run, enemy, dt) {
@@ -84,6 +88,24 @@ export class EnemyNavigation {
     if (magnitude < .01 || !run.props.length) return heading;
 
     const x = heading.x / magnitude, z = heading.z / magnitude;
+    const previous = this.headings.get(enemy);
+    if (previous && previous.props === run.props && (previous.ttl -= dt) > 0 &&
+        (x * previous.x + z * previous.z) > .976 &&
+        (enemy.x - previous.startX) ** 2 + (enemy.z - previous.startZ) ** 2 < .24) {
+      if (previous.straight) return heading;
+      return { x: previous.outX * magnitude, z: previous.outZ * magnitude };
+    }
+    const result = this.findHeading(run, enemy, x, z, dt, clearance);
+    if (result.x !== 0 || result.z !== 0) {
+      const memo = previous ?? {};
+      Object.assign(memo, { x, z, startX: enemy.x, startZ: enemy.z, props: run.props,
+        ttl: .065 + enemy.id % 5 * .016, outX: result.x, outZ: result.z, straight: result.x === x && result.z === z });
+      if (!previous) this.headings.set(enemy, memo);
+    } else this.headings.delete(enemy);
+    return { x: result.x * magnitude, z: result.z * magnitude };
+  }
+
+  findHeading(run, enemy, x, z, dt, clearance) {
     const span = 1.25 + enemy.speed * .36;
     const blocked = (dx, dz, distance = span) => sceneryBlocksPath(
       run, enemy.x, enemy.z, enemy.x + dx * distance, enemy.z + dz * distance, clearance,
@@ -91,13 +113,13 @@ export class EnemyNavigation {
     const detour = this.detours.get(enemy);
     const preferred = detour?.side ?? (enemy.id % 2 ? 1 : -1);
     if (!blocked(x, z)) {
-      if (!detour || (detour.releaseIn -= dt) <= 0) {
+      if (!detour || (detour.releaseIn -= Math.max(dt, .06)) <= 0) {
         this.detours.delete(enemy);
-        return heading;
+        return { x, z };
       }
       const [cos, sin] = TURNS[0];
       const px = x * cos - z * sin * preferred, pz = z * cos + x * sin * preferred;
-      return blocked(px, pz) ? heading : { x: px * magnitude, z: pz * magnitude };
+      return blocked(px, pz) ? { x, z } : { x: px, z: pz };
     }
 
     for (const side of [preferred, -preferred]) {
@@ -105,7 +127,7 @@ export class EnemyNavigation {
         const px = x * cos - z * sin * side, pz = z * cos + x * sin * side;
         if (blocked(px, pz)) continue;
         this.detours.set(enemy, { side, releaseIn: .22 });
-        return { x: px * magnitude, z: pz * magnitude };
+        return { x: px, z: pz };
       }
     }
     // At tight corners make a short move around the edge instead of trying to force a straight route.
@@ -113,7 +135,7 @@ export class EnemyNavigation {
       const px = -z * side, pz = x * side;
       if (blocked(px, pz, .65)) continue;
       this.detours.set(enemy, { side, releaseIn: .22 });
-      return { x: px * magnitude, z: pz * magnitude };
+      return { x: px, z: pz };
     }
     return { x: 0, z: 0 };
   }

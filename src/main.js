@@ -9,7 +9,7 @@ import { baseArt, desertArt } from './views/DesertArt.js';
 import { ScreenView } from './views/ScreenView.js';
 import { RenderQuality } from './views/RenderQuality.js';
 import { BattlefieldMotion } from './views/BattlefieldMotion.js';
-import { CHAMPION_CELLS, MINE_CHAMPIONS } from './views/ChampionAnimation.js';
+import { CHAMPION_CELLS, MINE_CHAMPIONS, TOWN_CHAMPIONS } from './views/ChampionAnimation.js';
 import { MAPS } from './config/mapConfig.js';
 import { bestiaryPageSize, menuPageSize, showSingleOffer } from './views/MenuPagination.js';
 
@@ -136,8 +136,10 @@ function render(app, force = false) {
 
 function preparePortraits() {
   const withMine = Boolean(profile.data.storyClears.mine);
-  if (portraitsPromises.has(withMine)) return;
-  portraitsPromises.set(withMine, baseArt(withMine).then(art => {
+  const withTown = Boolean(profile.data.storyClears.town);
+  const key = Number(withMine) + 2 * Number(withTown);
+  if (portraitsPromises.has(key)) return;
+  portraitsPromises.set(key, baseArt(withMine, withTown).then(art => {
     Object.assign(screen.portraits, art.portraits);
     if (vm.page === 'heroes') {
       const focus = document.activeElement?.dataset?.action;
@@ -145,7 +147,7 @@ function preparePortraits() {
       if (focus) root.querySelector(`[data-action="${CSS.escape(focus)}"]`)?.focus({ preventScroll: true });
     }
   }).catch(error => {
-    portraitsPromises.delete(withMine);
+    portraitsPromises.delete(key);
     console.warn('Os retratos serão carregados novamente ao iniciar a partida.', error);
   }));
 }
@@ -157,7 +159,8 @@ async function mount(gameVm) {
   screen.shell(`Preparando ${stageName}…`, '', 'menu', 'settings-shell');
   try {
     const withMine = run.mapId === 'mine' || MINE_CHAMPIONS.includes(run.characterId);
-    const [art, { DesertView }] = await Promise.all([desertArt(withMine), import('./views/DesertView.js')]);
+    const withTown = run.mapId === 'town' || TOWN_CHAMPIONS.includes(run.characterId);
+    const [art, { DesertView }] = await Promise.all([desertArt(withMine, withTown), import('./views/DesertView.js')]);
     Object.assign(screen.portraits, art.portraits);
     if (vm.run !== gameVm || loadingRun !== gameVm) return;
     loadingRun = null;

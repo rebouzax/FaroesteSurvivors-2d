@@ -1,6 +1,6 @@
 # Faroeste Survivors 2D
 
-Versão isométrica em pixel art de 32 bits do Faroeste Survivors, com as fases **Deserto dos Esquecidos** e **Mina da Noite**.
+Versão isométrica em pixel art de 32 bits do Faroeste Survivors, com as fases **Deserto dos Esquecidos**, **Mina da Noite** e **Cidade Fantasma**.
 
 ## Jogar
 
@@ -20,7 +20,7 @@ Na seleção de fase, abra **Arsenal**, **Loja do Bento** ou **Bestiário** para
 
 Use **Configurações → Ativar tela cheia** para abrir ou sair da tela cheia do navegador. Em celulares e tablets compatíveis, o primeiro toque em **Novo jogo** também pode ativá-la. Se o Safari não oferecer tela cheia na aba, use **Adicionar à Tela de Início** e abra o jogo pelo ícone. Os menus se ajustam às duas orientações, e os catálogos maiores têm botões de página.
 
-Cada fase tem 15 minutos de sobrevivência, com ondas que se intensificam conforme o relógio avança. No modo História, conclua três missões e derrote três chefes na mesma partida. Vencer o Deserto libera a Mina e o Modo Livre. Vencer a Mina libera Elias Ferro, Ruth Faísca e Neco Pavio. O relógio congela durante confrontos com chefes e escolhas de cartas. O progresso fica salvo no navegador.
+Cada fase tem 15 minutos de sobrevivência, com ondas que se intensificam conforme o relógio avança. No modo História, conclua as missões da fase e derrote três chefes na mesma partida. Vencer o Deserto libera a Mina e o Modo Livre. Vencer a Mina libera Elias Ferro, Ruth Faísca, Neco Pavio e a Cidade Fantasma. As quatro missões e os três chefes da Cidade Fantasma dão acesso a Silas Corvo e Teo Carril. O relógio congela durante confrontos com chefes e escolhas de cartas. O progresso fica salvo no navegador.
 
 ## Código
 

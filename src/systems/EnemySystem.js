@@ -13,7 +13,8 @@ const clamp = (value) =>
   Math.max(-CONFIG.mapHalf + 1, Math.min(CONFIG.mapHalf - 1, value));
 const RANGED_ENEMIES = new Set(["bellRinger","lanternThief","windmillWraith","drownedProspector","barBanshee","railWitch","graveRider","sundownBandit",...Object.keys(FRONTIER_ENEMIES).filter(id=>FRONTIER_ENEMIES[id].behavior==="ranged")]);
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
-const tacticFor = type => EARLY_ENEMIES[type]?.behavior || (RANGED_ENEMIES.has(type)||type==="skeleton" ? "ranged" : FRONTIER_ENEMIES[type]?.behavior||"chase");
+const tacticFor = type => type === 'wraith' ? 'haunt'
+  : EARLY_ENEMIES[type]?.behavior || (RANGED_ENEMIES.has(type)||type==="skeleton" ? "ranged" : FRONTIER_ENEMIES[type]?.behavior||"chase");
 
 export class EnemySystem {
   constructor() {
@@ -103,8 +104,9 @@ export class EnemySystem {
         if (distance > .01 && !boss.dash && !run.bossTelegraph) {
           const ranged=["volley","shotgun","crossfire","ringGap","tornadoes"].includes(boss.pattern);
           const preferred=ranged?5.5:2.3;
-          const approach=distance>preferred+1?1:distance<preferred-1&&ranged?-.55:0;
-          const orbit=distance<10?(boss.id%2?1:-1)*(.32+(boss.phase||1)*.12):0;
+          const sees = !ranged || this.navigation.seesPlayer(run, boss, dt);
+          const approach = !sees ? .65 : distance > preferred + 1 ? 1 : distance < preferred - 1 && ranged ? -.7 : 0;
+          const orbit = distance < 12 ? (boss.id%2?1:-1) * (sees ? .32 + (boss.phase || 1) * .12 : 1.1) : 0;
           const pace=boss.speed*(1+((boss.phase||1)-1)*.1);
           const heading = this.navigation.steer(run, boss, {
             x: dx / distance * approach - dz / distance * orbit,
@@ -123,19 +125,9 @@ export class EnemySystem {
           boss.swingTimer = 2;
         }
       }
-      for(const minion of run.enemies){
-        if(!minion.summoned||minion.hp<=0)continue;
-        const dx=run.player.x-minion.x,dz=run.player.z-minion.z,d=Math.hypot(dx,dz);
-        if (d > .1) {
-          const heading = this.navigation.steer(run, minion, { x: dx / d, z: dz / d }, dt);
-          minion.x += heading.x * minion.speed * dt;
-          minion.z += heading.z * minion.speed * dt;
-        }
-        this.keepOutOfProps(run,minion);
-        minion.hitFlash=Math.max(0,minion.hitFlash-dt);
-      }
-      this.separate(run);
-      this.updateShots(run,dt);
+      const minions = run.enemies.filter(enemy => enemy.summoned && enemy.hp > 0);
+      if (minions.length) this.moveEnemies(run, dt, new EnemyCrowd(run.enemies), minions);
+      else this.updateShots(run, dt);
       return;
     }
     const minute = Math.floor(run.time / 60);
@@ -229,8 +221,8 @@ export class EnemySystem {
         this.spawnForStage(run);}
     }
   }
-  moveEnemies(run, dt, crowd) {
-    for (const enemy of run.enemies) {
+  moveEnemies(run, dt, crowd, enemies = run.enemies) {
+    for (const enemy of enemies) {
       if(enemy.treasure)continue;
       enemy.throwRelease=Math.max(0,(enemy.throwRelease||0)-dt);
       if (enemy.type === "vulture") {
@@ -262,12 +254,14 @@ export class EnemySystem {
       if (distance > 0.05) {
         const side = enemy.id % 2 ? 1 : -1;
         const flank = Math.min(1, distance / 4, Math.max(0, (24 - distance) / 10));
+        const aimPace = enemy.aimTimer > 0 && enemy.type === 'headlessOutlaw' ? .22 : 1;
         const approach = ranged
-          ? distance < 7 ? -.85 : hasSight && distance < 11 ? 0 : .85
+          ? !hasSight && distance < range + 3 ? .62 : distance < 7 ? -.85 : hasSight && distance < 11 ? 0 : .85
           : role === 'orbit' && distance < 4 ? .4 : 1;
-        const orbit = side * flank * (role === 'orbit' ? 1.1 : ranged ? hasSight ? .48 : .95 : .24 + enemy.id % 7 * .065);
-        if (hound && run.player.moving) {
-          const lead = Math.min(2.8, Math.max(0, (distance - 3) * .23));
+        const orbit = side * flank * (role === 'orbit' || role === 'haunt' ? 1.1
+          : ranged ? hasSight ? .48 : 1.22 : .24 + enemy.id % 7 * .065);
+        if ((hound || role === 'charge' || role === 'haunt' || role === 'orbit') && run.player.moving) {
+          const lead = Math.min(hound ? 2.8 : 2.05, Math.max(0, (distance - 3) * .23));
           dx += run.player.dx * lead;
           dz += run.player.dz * lead;
         }
@@ -279,7 +273,7 @@ export class EnemySystem {
         const { x: steerX, z: steerZ } = this.navigation.steer(run, enemy, heading, dt);
         const magnitude=Math.hypot(steerX,steerZ);
         if(magnitude>.01){
-          const scale=enemy.speed/Math.max(1,magnitude);
+          const scale=enemy.speed*aimPace/Math.max(1,magnitude);
           enemy.x=clamp(enemy.x+steerX*scale*dt);
           enemy.z=clamp(enemy.z+steerZ*scale*dt);
         }
@@ -374,11 +368,10 @@ export class EnemySystem {
       const x = shot.x + shot.vx * dt;
       const z = shot.z + shot.vz * dt;
       if (sceneryBlocksPath(run, shot.x, shot.z, x, z, .14)) return false;
-      shot.x = x;
-      shot.z = z;
-      shot.age += dt;
       const player = run.player;
-      if (Math.hypot(shot.x-player.x,shot.z-player.z) < 0.63) {
+      const dx = x - shot.x, dz = z - shot.z;
+      const portion = Math.max(0, Math.min(1, ((player.x - shot.x) * dx + (player.z - shot.z) * dz) / Math.max(.00001, dx * dx + dz * dz)));
+      if ((shot.x + dx * portion - player.x) ** 2 + (shot.z + dz * portion - player.z) ** 2 < .63 ** 2) {
         if (player.invulnerable <= 0) {
           player.hp = Math.max(0, player.hp - shot.damage * 20 / (20 + run.playerArmor));
           player.invulnerable = 0.9;
@@ -387,6 +380,9 @@ export class EnemySystem {
         }
         return false;
       }
+      shot.x = x;
+      shot.z = z;
+      shot.age += dt;
       return shot.age < 4;
     });
   }

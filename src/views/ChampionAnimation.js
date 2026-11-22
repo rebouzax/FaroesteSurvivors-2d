@@ -2,7 +2,8 @@ import { championReleaseAge } from '../models/ActorCues.js';
 
 export const DESERT_CHAMPIONS = Object.freeze(['joao', 'maria', 'labuta', 'indigo', 'rosa', 'ada']);
 export const MINE_CHAMPIONS = Object.freeze(['elias', 'ruth', 'dynamite']);
-export const CHAMPION_CELLS = Object.freeze([...DESERT_CHAMPIONS, ...MINE_CHAMPIONS]);
+export const TOWN_CHAMPIONS = Object.freeze(['silas', 'teo']);
+export const CHAMPION_CELLS = Object.freeze([...DESERT_CHAMPIONS, ...MINE_CHAMPIONS, ...TOWN_CHAMPIONS]);
 
 const styles = {
   joao:   { size: 49, stride: 2.8, follow: .12, shadow: 23, recoil: .8 },
@@ -14,6 +15,8 @@ const styles = {
   elias:  { size: 52, stride: 2.65, follow: .12, shadow: 27, recoil: 2.2 },
   ruth:   { size: 50, stride: 2.95, follow: .11, shadow: 25, recoil: 2.45 },
   dynamite: { size: 51, stride: 2.8, follow: .14, shadow: 26, recoil: .7 },
+  silas:  { size: 49, stride: 3.15, follow: .105, shadow: 25, recoil: .55 },
+  teo:    { size: 54, stride: 2.7, follow: .095, shadow: 27, recoil: 2.15 },
 };
 const walk = [1, 2, 3, 2];
 

@@ -34,6 +34,7 @@
 
 .portrait-desert { --portrait-atlas: url('../assets/bestiary-desert.webp'); }
 .portrait-mine { --portrait-atlas: url('../assets/bestiary-mine.webp'); }
+.portrait-town { --portrait-atlas: url('../assets/bestiary-town.webp'); }
 .bestiary-portrait {
   position: relative;
   display: grid;
@@ -57,6 +58,9 @@
 .portrait-unknown i {
   background: url('../assets/bestiary-silhouettes.webp') var(--portrait-x) var(--silhouette-y) / 400% 400% no-repeat;
   filter: drop-shadow(0 0 4px #ba8f706b);
+}
+.portrait-town.portrait-unknown i {
+  background: url('../assets/bestiary-town-silhouettes.webp') var(--portrait-x) var(--portrait-y) / 400% 200% no-repeat;
 }
 .bestiary-portrait b {
   z-index: 1;

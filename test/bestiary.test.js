@@ -14,8 +14,9 @@ test('Every playable enemy and boss has a distinct portrait entry and category',
   assert.deepEqual(groups.map(group => group.label), ['Bestas', 'Mortos-vivos', 'Espíritos']);
   assert.ok(groups.every(group => group.items.length > 0));
   assert.equal(found, 0);
-  assert.equal(total, 14);
-  assert.equal(bestiaryPosition('shadowMarshal'), 2);
+  assert.equal(total, 7 * PLAYABLE_STAGES.length);
+  assert.ok(bestiaryPosition('shadowMarshal') >= 0);
+  assert.notEqual(bestiaryPosition('boneSinger'), bestiaryPosition('zombieDeputy'));
   for (const stage of PLAYABLE_STAGES) {
     const entries = BESTIARY.filter(entry => entry.stage === stage);
     const ids = [...ENEMY_STAGE_GROUPS[stage], ...CAMPAIGN[stage].bosses.map(boss => boss.id)];

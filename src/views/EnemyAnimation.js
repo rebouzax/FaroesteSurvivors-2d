@@ -7,6 +7,8 @@ const SIZE = {
   giantBat: 112, fireChupacabra: 102, shadowMarshal: 69, treasure: 33,
   miner: 47, mineSpider: 43, mineSkull: 38, blindCrawler: 38, treasureRat: 43,
   shovelMiner: 99, giantMoth: 112, minerGeneral: 95,
+  wraith: 46, townZombie: 46, townGhoul: 43, headlessOutlaw: 56,
+  boneHound: 108, boneSinger: 101, zombieDeputy: 88, treasureZombie: 43,
 };
 const FLIGHT = {
   bat: { altitude: 15, shadow: 17 },
@@ -14,6 +16,7 @@ const FLIGHT = {
   giantBat: { altitude: 45, shadow: 61 },
   mineSkull: { altitude: 15, shadow: 19 },
   giantMoth: { altitude: 37, shadow: 53 },
+  wraith: { altitude: 23, shadow: 22 },
 };
 const FLAP = [4, 0, 1, 5, 2, 6, 3, 7];
 const GALLOP = [4, 1, 5, 2, 6, 0];
@@ -42,6 +45,14 @@ const GAIT = {
   shovelMiner: [TWO_STEP, 1.9, 0b11],
   minerGeneral: [TWO_STEP, 1.9, 0b11],
   giantMoth: [MOTH_FLAP, 11, 1 << 2],
+  wraith: [TWO_STEP, 7, 0b10],
+  townZombie: [TWO_STEP, 2.8, 0b01],
+  townGhoul: [TWO_STEP, 5.5, 0b11],
+  headlessOutlaw: [TWO_STEP, 2.9, 0b01],
+  boneHound: [TWO_STEP, 4.6, 0b11],
+  boneSinger: [TWO_STEP, 1.9, 0b01],
+  zombieDeputy: [TWO_STEP, 2.45, 0b11],
+  treasureZombie: [WALK, 5.3, 0b0101],
 };
 const smooth = value => {
   const t = Math.max(0, Math.min(1, value));
@@ -105,6 +116,25 @@ export function enemyPose(name, enemy, time, travel, distance, bossTell, point =
       break;
     case 'giantMoth':
       if (bossTell || strike || enemy.dash) frame = 3;
+      break;
+    case 'wraith':
+    case 'townZombie':
+      if (strike) frame = 2;
+      else if (enemy.hitFlash > .04) frame = 3;
+      break;
+    case 'townGhoul':
+      if (enemy.charge) frame = enemy.charge.warning > 0 ? 2 : 3;
+      else if (strike) frame = 3;
+      break;
+    case 'headlessOutlaw':
+      if (strike || enemy.throwRelease > 0) frame = 3;
+      else if (enemy.aimTimer > 0) frame = 2;
+      break;
+    case 'boneHound':
+    case 'boneSinger':
+    case 'zombieDeputy':
+      if (bossTell) frame = 2;
+      else if (strike || enemy.releaseFlash > 0 || enemy.dash) frame = 3;
       break;
   }
   if (frame === undefined) {

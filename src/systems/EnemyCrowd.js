@@ -6,6 +6,8 @@ const BODY_RADIUS = {
   giantBat: 1.85, fireChupacabra: 1.85, shadowMarshal: 1.32,
   miner: 1.06, mineSpider: 1.1, mineSkull: .86, blindCrawler: .91,
   shovelMiner: 1.7, giantMoth: 1.7, minerGeneral: 1.55,
+  wraith: .87, townZombie: 1.05, townGhoul: 1.12, headlessOutlaw: 1.15,
+  boneHound: 1.85, boneSinger: 1.55, zombieDeputy: 1.5,
 };
 
 export const enemyBodyRadius = enemy => enemy.treasure ? 1.1 : BODY_RADIUS[enemy.bossId || enemy.type] ?? .95;
@@ -16,6 +18,7 @@ const present = enemy => enemy.hp > 0 && enemy.type !== 'vulture';
 export class EnemyCrowd {
   constructor(enemies) {
     this.cells = new Map();
+    this.buckets = [];
     for (const enemy of enemies) {
       if (!present(enemy)) continue;
       const key = cellKey(Math.floor(enemy.x / CELL), Math.floor(enemy.z / CELL));
@@ -24,19 +27,22 @@ export class EnemyCrowd {
     }
   }
 
-  *neighbors(enemy) {
+  nearbyBuckets(enemy) {
+    const buckets = this.buckets;
+    buckets.length = 0;
     const x = Math.floor(enemy.x / CELL), z = Math.floor(enemy.z / CELL);
     for (let dx = -1; dx <= 1; dx++) {
       for (let dz = -1; dz <= 1; dz++) {
         const bucket = this.cells.get(cellKey(x + dx, z + dz));
-        if (bucket) yield* bucket;
+        if (bucket) buckets.push(bucket);
       }
     }
+    return buckets;
   }
 
   steer(enemy, heading) {
     const radius = enemyBodyRadius(enemy);
-    for (const other of this.neighbors(enemy)) {
+    for (const bucket of this.nearbyBuckets(enemy)) for (const other of bucket) {
       if (enemy === other) continue;
       const x = enemy.x - other.x, z = enemy.z - other.z;
       const preferred = radius + enemyBodyRadius(other) + .75;
@@ -55,7 +61,7 @@ export class EnemyCrowd {
     for (const enemy of enemies) {
       if (!present(enemy)) continue;
       const radius = enemyBodyRadius(enemy);
-      for (const other of this.neighbors(enemy)) {
+      for (const bucket of this.nearbyBuckets(enemy)) for (const other of bucket) {
         if (other.id <= enemy.id) continue;
         let x = enemy.x - other.x, z = enemy.z - other.z;
         const min = radius + enemyBodyRadius(other);

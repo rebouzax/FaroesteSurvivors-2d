@@ -2,12 +2,16 @@ import spritesUrl from '../assets/frontier-sprites.webp';
 import propsUrl from '../assets/desert-sprites.webp';
 import actorAnimationUrl from '../assets/desert-actor-animation.webp';
 import mineUrl from '../assets/mine-sprites.webp';
-import { CONFIG } from '../config/gameConfig.js';
-import { createDesertDressing, crossingZ, CROSSING_WIDTH, mailRoadX, MAIL_ROAD_WIDTH, washX, WASH_WIDTH } from '../models/DesertLayout.js';
+import townUrl from '../assets/town-sprites.webp';
+import townDistrictUrl from '../assets/town-district-props.webp';
+import { createDesertDressing } from '../models/DesertLayout.js';
 import { paintRavenFrames } from './DesertRavens.js';
 import { ENEMY_CELLS, ENEMY_FRAME_SIZE } from './EnemyAnimation.js';
-import { DESERT_CHAMPIONS, MINE_CHAMPIONS } from './ChampionAnimation.js';
-import { MINE_TRACKS } from '../models/MineLayout.js';
+import { DESERT_CHAMPIONS, MINE_CHAMPIONS, TOWN_CHAMPIONS } from './ChampionAnimation.js';
+
+export { desertFloor } from './DesertTerrain.js';
+export { mineFloor } from './MineTerrain.js';
+export { townFloor } from './TownTerrain.js';
 
 const groups = [
   [spritesUrl, [
@@ -26,19 +30,27 @@ const load = async (url) => {
   await art.decode();
   return art;
 };
-let sharedArt, sharedMine;
-const battleAtlases = new Map();
-export function baseArt(withMine = false) {
+let sharedArt, sharedActors, sharedMine, sharedTown, currentAtlas;
+export function baseArt(withMine = false, withTown = false) {
   sharedArt ??= createArt().catch(error => {
     sharedArt = undefined;
     throw error;
   });
-  if (!withMine) return sharedArt;
-  return Promise.all([sharedArt, mineArt()]).then(([base, mine]) => ({ ...base, portraits: { ...base.portraits, ...mine.portraits } }));
+  if (!withMine && !withTown) return sharedArt;
+  return Promise.all([sharedArt, withMine ? mineArt() : null, withTown ? townArt() : null])
+    .then(([base, mine, town]) => ({ ...base, portraits: { ...base.portraits, ...mine?.portraits, ...town?.portraits } }));
 }
 
-export function desertArt(withMine = false) {
-  if (!battleAtlases.has(withMine)) battleAtlases.set(withMine, Promise.all([baseArt(), load(actorAnimationUrl), withMine ? mineArt() : null]).then(([base, actorArt, mine]) => {
+export function desertArt(withMine = false, withTown = false) {
+  const key = Number(withMine) + 2 * Number(withTown);
+  if (currentAtlas?.key === key) return currentAtlas.promise;
+  sharedActors ??= load(actorAnimationUrl).catch(error => {
+    sharedActors = undefined;
+    throw error;
+  });
+  const promise = Promise.all([
+    baseArt(), sharedActors, withMine ? mineArt() : null, withTown ? townArt() : null,
+  ]).then(([base, actorArt, mine, town]) => {
     const cell = ENEMY_FRAME_SIZE;
     const rows = [...DESERT_CHAMPIONS.map(id => id + 'Pose'), ...ENEMY_CELLS];
     const columns = 8;
@@ -47,7 +59,7 @@ export function desertArt(withMine = false) {
     }
     const offsetY = base.atlas.height;
     const mineY = offsetY + actorArt.height;
-    const atlas = raster(actorArt.width, mineY + (mine?.sheet.height ?? 0));
+    const atlas = raster(actorArt.width + (town?.sheet.width ?? 0), mineY + (mine?.sheet.height ?? 0));
     const ctx = atlas.getContext('2d');
     ctx.drawImage(base.atlas, 0, 0);
     ctx.drawImage(actorArt, 0, offsetY);
@@ -56,16 +68,70 @@ export function desertArt(withMine = false) {
       for (let i = 0; i < columns; i++) frames[name + i] = { x: i * cell, y: offsetY + row * cell, w: cell, h: cell };
     });
     paintRavenFrames(ctx, frames, base.atlas.width + 5, 5);
+    paintAtmosphere(ctx, frames, base.atlas.width, 100);
     if (mine) {
       ctx.drawImage(mine.sheet, 0, mineY);
       for (const [id, frame] of Object.entries(mine.frames)) frames[id] = { ...frame, y: frame.y + mineY };
     }
-    return { atlas, frames, portraits: { ...base.portraits, ...mine?.portraits } };
+    if (town) {
+      ctx.drawImage(town.sheet, actorArt.width, 0);
+      for (const [id, frame] of Object.entries(town.frames)) frames[id] = { ...frame, x: frame.x + actorArt.width };
+    }
+    return { atlas, frames, portraits: { ...base.portraits, ...mine?.portraits, ...town?.portraits } };
   }).catch(error => {
-    battleAtlases.delete(withMine);
+    if (currentAtlas?.promise === promise) currentAtlas = undefined;
     throw error;
-  }));
-  return battleAtlases.get(withMine);
+  });
+  // Keep only the latest combined canvas. The decoded sprite sheets are shared across runs.
+  currentAtlas = { key, promise };
+  return promise;
+}
+
+function paintAtmosphere(ctx, frames, x, y) {
+  const size = 96;
+  const spot = ctx.createRadialGradient(x + size / 2, y + size / 2, 0, x + size / 2, y + size / 2, size / 2);
+  spot.addColorStop(0, '#fff');
+  spot.addColorStop(.45, '#ffffffe6');
+  spot.addColorStop(.78, '#ffffff80');
+  spot.addColorStop(1, '#ffffff00');
+  ctx.fillStyle = spot;
+  ctx.fillRect(x, y, size, size);
+  frames.haze = { x, y, w: size, h: size };
+}
+
+function townArt() {
+  sharedTown ??= Promise.all([load(townUrl), load(townDistrictUrl)]).then(([actors, district]) => {
+    const cell = ENEMY_FRAME_SIZE;
+    if (actors.width !== cell * 8 || actors.height !== cell * 8 || district.width !== cell * 8 || district.height !== cell * 2)
+      throw new Error('Folhas de sprites da cidade com dimensões inválidas.');
+    const sheet = raster(actors.width, actors.height + district.height);
+    const ctx = sheet.getContext('2d');
+    ctx.drawImage(actors, 0, 0);
+    ctx.drawImage(district, 0, actors.height);
+    const frames = {}, portraits = {};
+    const frame = slot => ({ x: slot % 8 * cell, y: Math.floor(slot / 8) * cell, w: cell, h: cell });
+    TOWN_CHAMPIONS.forEach((id, row) => {
+      for (let i = 0; i < 8; i++) frames[id + 'Pose' + i] = frame(row * 8 + i);
+      const portrait = raster(cell, cell);
+      const { x, y } = frames[id + 'Pose0'];
+      portrait.getContext('2d').drawImage(sheet, x, y, cell, cell, 0, 0, cell, cell);
+      portraits[id] = portrait.toDataURL();
+    });
+    ['wraith', 'townZombie', 'townGhoul', 'headlessOutlaw', 'boneHound', 'boneSinger', 'zombieDeputy', 'treasureZombie']
+      .forEach((id, index) => {
+        for (let i = 0; i < 4; i++) frames[id + i] = frame(16 + index * 4 + i);
+      });
+    ['Saloon', 'Store', 'Jail', 'Chapel', 'House', 'Mortuary', 'Stable', 'Tower',
+      'Lamp', 'Wagon', 'Debris', 'Trough', 'Fence', 'Barricade', 'Well', 'Tree',
+      'Hotel', 'Forge', 'Depot', 'FreightShed', 'RailCar', 'RailStop', 'Hearse', 'IronGate',
+      'Tomb', 'Cross', 'Hitch', 'Crates', 'Piano', 'Sign', 'Scrub', 'Ruins']
+      .forEach((id, index) => { frames['town' + id] = frame(48 + index); });
+    return { sheet, frames, portraits };
+  }).catch(error => {
+    sharedTown = undefined;
+    throw error;
+  });
+  return sharedTown;
 }
 
 function mineArt() {
@@ -148,158 +214,20 @@ async function createArt() {
   return { atlas, frames, portraits };
 }
 
-const TEXELS = 4;
-const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
-let terrain;
-export function desertFloor() {
-  if (terrain) return terrain;
-  const size = CONFIG.mapHalf * 2 * TEXELS;
-  const canvas = raster(size, size);
-  const ctx = canvas.getContext('2d');
-  const pixels = ctx.createImageData(size, size);
-  const data = pixels.data;
-  const axis = Array.from({ length: size }, (_, i) => i / TEXELS - CONFIG.mapHalf);
-  const crossings = Float32Array.from(axis, crossingZ);
-  const dunes = Float32Array.from(axis, x => Math.sin(x * .115) * 2.1 + Math.sin(x * .27) * .42);
-  let seed = 1887;
-  for (let row = 0; row < size; row++) {
-    const z = axis[row], mail = mailRoadX(z), dryWash = washX(z);
-    const band = Math.sin(z * .092) * 2.2 + Math.sin(z * .27) * .67;
-    const rutWaver = Math.sin(z * .47) * .14;
-    for (let col = 0; col < size; col++) {
-      const x = axis[col];
-      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-      const random = seed / 4294967296;
-      const primary = Math.abs(x - mail);
-      const branch = Math.abs(z - crossings[col]);
-      const road = clamp((1 - Math.min(primary / MAIL_ROAD_WIDTH, branch / CROSSING_WIDTH)) * 1.88 + (random - .5) * .19, 0, 1);
-      const wash = clamp((1 - Math.abs(x - dryWash) / WASH_WIDTH) * 1.7, 0, 1) * (1 - road);
-      const wheel = Math.abs(primary - 1.93 - rutWaver) < .19 || Math.abs(branch - 1.45) < .14;
-      const dirt = Math.round((band + dunes[col]) * 1.8 + (random - .5) * (11 - road * 4));
-      const smallStone = wash > .15 && random > .96 ? 18 : 0;
-      const rut = wheel ? 9 : 0;
-      const edge = clamp((CONFIG.mapHalf - Math.max(Math.abs(x), Math.abs(z))) / 5, 0, 1);
-      const offset = (row * size + col) * 4;
-      data[offset] = 45 + edge * (31 + 35 * road - 11 * wash - rut + dirt + smallStone);
-      data[offset + 1] = 32 + edge * (17 + 25 * road - 4 * wash - rut * .73 + dirt * .69 + smallStone);
-      data[offset + 2] = 35 + edge * (11 + 12 * road + 6 * wash - rut * .39 + dirt * .48 + smallStone);
-      data[offset + 3] = 255;
-    }
-  }
-  ctx.putImageData(pixels, 0, 0);
-  paintHoofTracks(ctx);
-  terrain = canvas;
-  return terrain;
-}
-
-let mineTerrain;
-export function mineFloor() {
-  if (mineTerrain) return mineTerrain;
-  const scale = 3;
-  const size = CONFIG.mapHalf * 2 * scale;
-  const canvas = raster(size, size);
-  const ctx = canvas.getContext('2d');
-  const pixels = ctx.createImageData(size, size);
-  const data = pixels.data;
-  const lights = MINE_TRACKS.northSouth.flatMap(x => MINE_TRACKS.eastWest.map(z => [x, z]));
-  let seed = 947;
-  for (let row = 0; row < size; row++) {
-    const z = row / scale - CONFIG.mapHalf;
-    for (let col = 0; col < size; col++) {
-      const x = col / scale - CONFIG.mapHalf;
-      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-      const noise = (seed >>> 27) - 14;
-      const structure = Math.sin(x * .21 + z * .09) * 3 + Math.sin(z * .51 - x * .14) * 3;
-      const seam = Math.sin(x * .28 + Math.sin(z * .09) * 2) * Math.sin(z * .19);
-      const rock = seam > .48 ? 7 : seam < -.57 ? -6 : 0;
-      let pool = 0;
-      for (const [lx, lz] of lights) {
-        const dx = x - lx, dz = z - lz;
-        pool = Math.max(pool, 1 - (dx * dx + dz * dz) / 512);
-      }
-      const offset = (row * size + col) * 4;
-      const edge = clamp((CONFIG.mapHalf - Math.max(Math.abs(x), Math.abs(z))) / 8, 0, 1);
-      data[offset] = 21 + edge * (27 + structure + rock + noise * .48 + pool * 20);
-      data[offset + 1] = 18 + edge * (26 + structure + rock + noise * .48 + pool * 11);
-      data[offset + 2] = 29 + edge * (27 + structure + rock + noise * .64 - pool * 7);
-      data[offset + 3] = 255;
-    }
-  }
-  ctx.putImageData(pixels, 0, 0);
-  for (const [rotation, tracks] of [[false, MINE_TRACKS.northSouth], [true, MINE_TRACKS.eastWest]]) {
-    ctx.save();
-    if (rotation) ctx.transform(0, 1, 1, 0, 0, 0);
-    for (const track of tracks) {
-      const center = (track + CONFIG.mapHalf) * scale;
-      ctx.fillStyle = '#15142270';
-      ctx.fillRect(center - 9, 0, 18, size);
-      for (let y = 0; y < size; y += 7) {
-        const hash = Math.abs(Math.imul(y + 11, 421) ^ Math.imul(track + 7, 103));
-        if (hash % 27 === 0) continue;
-        const left = center - 8 + hash % 3 - 1;
-        ctx.fillStyle = hash % 4 ? '#614439' : '#765041';
-        ctx.fillRect(left, y, 16, 3);
-        ctx.fillStyle = '#2d2431';
-        ctx.fillRect(left, y + 2, 16, 1);
-      }
-      for (const rail of [center - 5, center + 4]) {
-        ctx.fillStyle = '#30313d';
-        ctx.fillRect(rail, 0, 3, size);
-        ctx.fillStyle = '#83747a';
-        ctx.fillRect(rail, 0, 1, size);
-        for (let y = 9; y < size; y += 21) {
-          ctx.fillStyle = '#a98c73';
-          ctx.fillRect(rail, y, 2, 1);
-        }
-      }
-    }
-    ctx.restore();
-  }
-  mineTerrain = canvas;
-  return canvas;
-}
-
-function paintHoofTracks(ctx) {
-  for (const crossing of [false, true]) {
-    const path = crossing ? crossingZ : mailRoadX;
-    for (let n = 0; n < 80; n++) {
-      if (n % 13 > 8) continue;
-      const coordinate = -111 + n * 2.85 + Math.sin(n * 1.67) * .18;
-      const tangent = (path(coordinate + .25) - path(coordinate - .25)) * 2;
-      const side = (n % 2 ? .52 : -.52) + (crossing ? .33 : .15);
-      const x = crossing ? coordinate : path(coordinate) + side;
-      const z = crossing ? path(coordinate) + side : coordinate;
-      for (let print = 0; print < 2; print++) {
-        const stride = print * .56;
-        const pixelX = Math.round((x + CONFIG.mapHalf + stride * (crossing ? 1 : tangent)) * TEXELS);
-        const pixelY = Math.round((z + CONFIG.mapHalf + stride * (crossing ? tangent : 1)) * TEXELS);
-        ctx.save();
-        ctx.translate(pixelX, pixelY);
-        ctx.rotate((crossing ? Math.atan2(tangent, 1) : Math.atan2(1, tangent)) + Math.PI / 2);
-        ctx.globalAlpha = print ? .36 : .52;
-        ctx.fillStyle = '#34242a';
-        ctx.fillRect(-1.5, -.75, 1, 2);
-        ctx.fillRect(.5, -.75, 1, 2);
-        ctx.fillRect(-.75, -1.75, 1.5, 1);
-        ctx.fillStyle = '#b68760';
-        ctx.fillRect(-1.25, 1.25, 2.5, .65);
-        ctx.restore();
-      }
-    }
-  }
-}
-
-export function desertDetails(props, mine = false) {
-  const details = mine ? [] : createDesertDressing();
+export function desertDetails(props, stage = 'desert') {
+  const mine = stage === 'mine', town = stage === 'town';
+  const details = stage === 'desert' ? createDesertDressing() : [];
   for (const prop of props) {
     if (prop.hidden) continue;
     const { type, x, z, size, radius, visual, assetId } = prop;
     const family = visual ?? assetId ?? type;
-    const name = mine ? family + Math.abs(Math.floor(x * 11 + z * 17)) % 4 : family;
+    const name = mine ? family + (prop.variant ?? Math.abs(Math.floor(x * 11 + z * 17)) % 4) : family;
     const width = prop.width ?? { wagon: 56, fence: 39, telegraph: 32, grave: 23, waypost: 26, tent: 61, tree: 33 }[name]
       ?? (type === 'rock' ? radius * 16 : 10 + size * 8);
-    details.push({ x, z: prop.visualZ ?? z, name, width, flip: family !== 'mineBeam' && Math.sin(x) > 0,
-      anchorY: mine ? .075 : undefined, lamp: family === 'mineLamp' });
+    details.push({ x: prop.visualX ?? x, z: prop.visualZ ?? z, name, width,
+      flip: prop.flip ?? (!town && family !== 'mineBeam' && Math.sin(x) > 0), occludes: prop.occludes,
+      shearY: family === 'townRailCar' ? .34 : undefined,
+      anchorY: mine || town ? .075 : undefined, lamp: family === 'mineLamp' || family === 'townLamp' });
   }
   return details;
 }

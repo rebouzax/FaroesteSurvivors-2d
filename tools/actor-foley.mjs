@@ -9,6 +9,8 @@ const heroes = {
   elias:    [1.17, 102, 2110,  97, 421, 'rifle'],
   ruth:     [1.02, 158, 2840, 196, 665, 'sawedoff'],
   dynamite: [1.15,  95, 1160, 108, 572, 'dynamite'],
+  silas:    [.85,  133, 3970, 124, 498, 'knives'],
+  teo:      [1.23, 117, 3170,  92, 472, 'repeater'],
 };
 
 // [movement family, body frequency, voice F0, upper formant, roughness]
@@ -29,6 +31,14 @@ const creatures = {
   shovelMiner:    ['boot',  76,  62,  810, 1.20],
   giantMoth:      ['wing', 135, 174, 1260, .42],
   minerGeneral:   ['boot',  89, 103, 1450, .88],
+  wraith:         ['wisp',  170, 249, 1960, .54],
+  townZombie:     ['boot',  119,  69, 1250, .91],
+  townGhoul:      ['pads',  202, 148, 2780, .95],
+  headlessOutlaw: ['bone',  288, 125, 1920, .87],
+  boneHound:      ['bone',  448,  88,  818, 1.17],
+  boneSinger:     ['wisp',  327, 187, 1010, .84],
+  zombieDeputy:   ['boot',   74,  57,  946, 1.11],
+  treasureZombie: ['boot',  237, 303, 3180, .68],
 };
 
 const TAU = Math.PI * 2;
@@ -38,8 +48,10 @@ const shot = {
   shotgun: [73, .94, 1.35, 1820, .158],
   sawedoff: [102, 1.11, 1.02, 2240, .104],
   rifle: [153, 1.65, .57, 5020, .125],
+  repeater: [137, 1.52, .81, 4370, .138],
 };
-const bosses = new Set(['giantBat', 'fireChupacabra', 'shadowMarshal', 'shovelMiner', 'giantMoth', 'minerGeneral']);
+const bosses = new Set(['giantBat', 'fireChupacabra', 'shadowMarshal', 'shovelMiner', 'giantMoth', 'minerGeneral',
+  'boneHound', 'boneSinger', 'zombieDeputy']);
 
 function transient(s, start, body, amp, cutoff = 1060) {
   s.mode(start, .095, amp * .67, body, .025, -105);
@@ -77,6 +89,16 @@ function arm(s, weapon, take) {
   if (shot[weapon]) {
     discharge(s, shot[weapon], take);
     if (weapon === 'dual') discharge(s, shot.dual, 1 - take, .051, .73);
+    if (weapon === 'repeater') {
+      s.noise(.096, .035, .29, 560, 5500, .009, .0024);
+      s.mode(.118, .055, .21, 1926 + take * 80, .015, -730);
+    }
+  } else if (weapon === 'knives') {
+    for (const [at, gain] of [[0, 1], [.027, .72]]) {
+      s.noise(at, .075, .95 * gain, 1090, 9080, .021, .0015);
+      s.mode(at + .002, .083, .25 * gain, 2920 - take * 247, .021, -3400);
+      s.noise(at + .014, .092, .42 * gain, 515, 3450, .041, .007);
+    }
   } else if (weapon === 'whip') {
     s.noise(.0004, .038, 1.48, 1700, 14700, .006, .00016);
     s.noise(.001, .052, .68, 470, 4050, .012, .0005);
@@ -136,6 +158,13 @@ function creatureStrike(s, id, profile, take) {
   const [family, body, pitch, top, roughness] = profile;
   if (id === 'shadowMarshal') {
     discharge(s, [93, 1.04, 1.22, 1730, .16], take);
+  } else if (id === 'zombieDeputy') {
+    discharge(s, [81, 1.16, 1.28, 1950, .17], take);
+  } else if (id === 'boneSinger') {
+    s.noise(0, .12, .72, 335, 2410, .037, .001);
+    s.vocal(.002, .20, pitch + take * 7, [[422, 3, 1], [top, 4.9, .92], [2480, 7, .25]],
+      .93, { roughness, bend: -.15, wobble: .075 });
+    s.mode(.003, .18, .36, 723 + take * 27, .058, -414);
   } else {
     transient(s, .001, body * .85, .52, top);
     s.noise(.001, .105, .75, Math.max(160, body * 1.2), top * 2.6, .021, .0008);

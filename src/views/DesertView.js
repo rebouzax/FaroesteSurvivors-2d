@@ -5,7 +5,7 @@ import {
 import { CONFIG } from '../config/gameConfig.js';
 import { abilityStats } from '../config/abilityConfig.js';
 import { horseshoePositions } from '../systems/CombatSystem.js';
-import { desertDetails, desertFloor, mineFloor } from './DesertArt.js';
+import { desertDetails, desertFloor, mineFloor, townFloor } from './DesertArt.js';
 import { drawDesertRavens } from './DesertRavens.js';
 import { championPose } from './ChampionAnimation.js';
 import { enemyPose } from './EnemyAnimation.js';
@@ -18,6 +18,11 @@ const TAU = Math.PI * 2;
 const projectX = (x, z) => (x - z) * UNIT;
 const projectY = (x, z) => -(x + z) * UNIT * .5;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const BATTLEFIELD_PALETTES = {
+  desert: { clear: 0x1d1927, mist: 0xf4bb8b, sparks: 0xffc475 },
+  mine: { clear: 0x181521, mist: 0x9589d8, sparks: 0xc7abec },
+  town: { clear: 0x171923, mist: 0xc1c9f1, sparks: 0xbacfec },
+};
 const pixelTexture = (canvas) => {
   const texture = new CanvasTexture(canvas);
   texture.colorSpace = SRGBColorSpace;
@@ -30,25 +35,28 @@ export class DesertView {
   constructor(canvas, art, props, preferences) {
     this.canvas = canvas;
     this.preferences = preferences;
-    this.mine = preferences.stageId === 'mine';
+    this.stage = preferences.stageId;
+    this.palette = BATTLEFIELD_PALETTES[this.stage] ?? BATTLEFIELD_PALETTES.desert;
     this.renderScale = preferences.renderScale ?? 1;
     this.scene = new Scene();
-    this.scene.background = new Color(this.mine ? 0x181521 : 0x1d1927);
+    this.scene.background = new Color(this.palette.clear);
     this.camera = new OrthographicCamera(-320, 320, 200, -200, .1, 50);
     this.camera.position.z = 5;
     this.renderer = new WebGLRenderer({ canvas, antialias: false, alpha: false, powerPreference: 'high-performance' });
     this.atlas = pixelTexture(art.atlas);
-    this.floorTexture = pixelTexture(this.mine ? mineFloor() : desertFloor());
+    const floor = this.stage === 'mine' ? mineFloor : this.stage === 'town' ? townFloor : desertFloor;
+    this.floorTexture = pixelTexture(floor());
     this.batch = new SpriteBatch(this.atlas, art.frames);
     this.ground = this.createGround();
     this.scene.add(this.ground, this.batch.mesh);
-    this.details = desertDetails(props, this.mine).map(detail => ({
+    this.details = desertDetails(props, this.stage).map(detail => ({
       ...detail,
       x: Math.round(projectX(detail.x, detail.z)),
       y: Math.round(projectY(detail.x, detail.z)),
       scenery: true,
     }));
     this.enemyMotion = new WeakMap();
+    this.actors = [];
     this.playerPoint = {};
     this.actorPoint = {};
     this.shotPoint = {};
@@ -128,7 +136,8 @@ export class DesertView {
       attackAge: run.attack?.age ?? 0, travel: p.travel ?? 0, hurt: run.visualTime < (p.hurtCueUntil ?? -Infinity),
     };
     const targetX = projectX(player.x, player.z);
-    const targetY = projectY(player.x, player.z) + this.size.h * .035;
+    const playerY = projectY(player.x, player.z);
+    const targetY = playerY + this.size.h * .035;
     const lerp = this.ready ? 1 - Math.exp(-dt * 12) : 1;
     this.view.x += (targetX - this.view.x) * lerp;
     this.view.y += (targetY - this.view.y) * lerp;
@@ -138,13 +147,14 @@ export class DesertView {
 
     const { time } = clock;
     const ambient = this.preferences.wind && !this.preferences.reducedMotion;
-    const actors = [];
+    const actors = this.actors;
+    actors.length = 0;
     const queue = (point, name, width, extra = {}) => {
       const x = projectX(point.x, point.z), y = projectY(point.x, point.z);
       if (this.visible(x, y)) actors.push({ x, y, width, name, ...extra });
     };
     for (const detail of this.details) {
-      if (this.visible(detail.x, detail.y)) actors.push(detail);
+      if (this.visible(detail.x, detail.y, Math.max(70, detail.width))) actors.push(detail);
     }
     for (const crate of run.crates) queue(crate, 'crate', 21, { beacon: 0xffba64 });
     if (run.merchant) queue(run.merchant, 'bento', 29, { beacon: 0xffc36d, sway: true });
@@ -162,7 +172,7 @@ export class DesertView {
           contacts.push({ actor: enemy, id: name, action: 'move', index: pose.contact, x: point.x, z: point.z });
       }
       const hurt = clamp(((enemy.hurtCueUntil ?? 0) - clock.visual) / .12, 0, 1);
-      queue(point, pose.frame, pose.size, {
+      actors.push({ x, y, name: pose.frame, width: pose.size,
         flip: movement.flip, lift: pose.lift, anchorY: pose.anchorY, shadow: pose.shadow, enrage: enemy.phaseFlash,
         shift: (movement.flip ? 1 : -1) * hurt * Math.min(3, pose.size * .045),
         color: enemy.hitFlash > .07 ? 0xff797b : enemy.hitFlash > 0 ? 0xffb4a1 : 0xffe1cc,
@@ -186,6 +196,7 @@ export class DesertView {
       alpha: p.invulnerable > 0 && Math.floor(p.invulnerable * 14) % 2 ? .77 : 1,
     });
 
+    if (ambient) this.haze(run, time);
     this.groundEffects(run, time, player);
     for (const item of run.loot) {
       const x = Math.round(projectX(item.x, item.z)), y = Math.round(projectY(item.x, item.z));
@@ -196,10 +207,14 @@ export class DesertView {
       this.batch.sprite(name, x, y + bob + 1, name === 'xp' ? 6 : 8);
     }
     actors.sort((a, b) => b.y - a.y);
-    for (const actor of actors) this.actor(actor, time);
+    for (const actor of actors) {
+      const occludesPlayer = actor.occludes && Math.abs(actor.x - targetX) < actor.width * .38 &&
+        actor.y < playerY && actor.y + actor.width * .76 > playerY + 9;
+      this.actor(actor, time, occludesPlayer);
+    }
     this.airEffects(run, clock, player, motion, fraction, echoActive ? echo : null);
-    if (!this.mine && !this.preferences.reducedMotion) drawDesertRavens(this, time, projectX, projectY);
-    if (ambient) this.dust(run, time);
+    if (this.stage === 'desert' && !this.preferences.reducedMotion) drawDesertRavens(this, time, projectX, projectY);
+    if (ambient) this.particles(run, time);
     this.batch.finish();
     this.renderer.render(this.scene, this.camera);
     return frameAudio;
@@ -225,7 +240,7 @@ export class DesertView {
     return motion;
   }
 
-  actor(a, time) {
+  actor(a, time, occludesPlayer) {
     const { x, y, name, width, flip } = a;
     const { batch } = this;
     const phase = time * 10;
@@ -244,13 +259,11 @@ export class DesertView {
     if (name === 'campfire') {
       for (let i = 4; i > 0; i--) this.ring(x, y, i * 8, i * 4, 0xff9e44, .041 * (5 - i), 4, 18);
     }
-    if (a.lamp) {
-      for (let i = 1; i <= 3; i++)
-        this.ring(x, y, i * 7, i * 3.5, 0xf8b163, .10 / i * (.86 + Math.sin(time * 3 + x) * .14), 4, 12);
-    }
+    if (a.lamp) batch.sprite('haze', x, y + 2, 55, { height: 28, anchorY: .5, color: 0xfab46b,
+      alpha: .18 + Math.sin(time * 3 + x) * .025 });
     batch.sprite(name, x + (a.shift ?? 0), y + bob, width, {
-      flip, height: a.height, color: a.color, alpha: a.alpha,
-      anchorY: a.anchorY,
+      flip, height: a.height, color: a.color, alpha: occludesPlayer ? .56 : a.alpha,
+      anchorY: a.anchorY, shearY: a.shearY,
       angle: a.sway ? Math.sin(phase) * .027 : 0,
     });
     if (a.enemy?.charge?.warning > 0 || a.enemy?.aimTimer > 0) {
@@ -275,8 +288,9 @@ export class DesertView {
       const radius = arena.radius * UNIT * Math.SQRT2;
       this.ring(x, y, radius, radius / 2, 0x87354b, .7, 4, 96);
       this.ring(x, y, radius, radius / 2, 0xf07850, .85, 1.3, 96);
-      for (let i = 0; i < 96; i++) {
-        const angle = i / 96 * TAU;
+      const flames = this.renderScale < .8 ? 48 : 72;
+      for (let i = 0; i < flames; i++) {
+        const angle = i / flames * TAU;
         const h = 3 + (Math.sin(time * 13 + i * 3.7) + 1) * 3;
         batch.rect(x + radius * Math.cos(angle), y + radius * .5 * Math.sin(angle), 2, h, i % 3 ? 0xd45645 : 0xffa965, .69);
       }
@@ -289,10 +303,28 @@ export class DesertView {
       const radius = tell.radius * UNIT * Math.SQRT2;
       this.ring(x, y, radius, radius / 2, 0xff6b51, alpha, 2);
       this.ring(x, y, radius * .8, radius * .4, 0xa62d61, alpha, 1);
-      if (['dash', 'lunge', 'volley', 'crossfire'].includes(tell.pattern)) {
+      if (['dash', 'lunge', 'volley', 'crossfire', 'shotgun'].includes(tell.pattern)) {
         batch.line(sourceX, sourceY, x, y, 4, 0x9a354a, .68);
         batch.line(sourceX, sourceY, x, y, 1.2, 0xff875b, alpha);
       }
+      if (tell.pattern === 'shotgun') {
+        const range = Math.max(4, Math.hypot(tell.x - tell.fromX, tell.z - tell.fromZ));
+        for (const spread of [-.2, .2]) {
+          const angle = tell.angle + spread;
+          const edgeX = sourceX + projectX(Math.cos(angle), Math.sin(angle)) * range;
+          const edgeY = sourceY + projectY(Math.cos(angle), Math.sin(angle)) * range;
+          batch.line(sourceX, sourceY, edgeX, edgeY, 1.15, 0xff875b, alpha * .65);
+        }
+      }
+    }
+    for (const strike of run.weather.strikes ?? []) {
+      const x = projectX(strike.x, strike.z), y = projectY(strike.x, strike.z);
+      if (!this.visible(x, y, 120)) continue;
+      const radius = strike.radius * UNIT * Math.SQRT2;
+      const progress = Math.min(1, strike.age / 1.2);
+      const fade = strike.hit ? Math.max(0, 1 - (strike.age - 1.2) / .45) : 1;
+      this.ring(x, y, radius, radius / 2, 0xbcaeff, .82 * fade, 1.8, 26);
+      this.ring(x, y, radius * progress, radius * progress / 2, 0xebdfff, .85 * fade, 1, 24);
     }
     for (const enemy of run.enemies) {
       const charge = enemy.charge;
@@ -377,11 +409,11 @@ export class DesertView {
     const releaseAge = primaryEcho ? visual - primaryEcho.at : attackAge - release;
     if ((primaryEcho || run.attack?.hit) && run.characterId !== 'joao' && run.hero.primary !== 'dynamite' && releaseAge < .065) {
       const fade = clamp(1 - releaseAge / .065, 0, 1);
-      const firearm = run.hero.primary !== 'bow' && run.hero.primary !== 'crossbow';
+      const firearm = !['bow', 'crossbow', 'knives'].includes(run.hero.primary);
       const facing = this.facing ? -1 : 1;
       const angle = primaryEcho?.angle ?? run.attack.angle;
       const vertical = projectY(Math.cos(angle), Math.sin(angle)) / UNIT;
-      const x = projectX(p.x, p.z) + facing * (run.characterId === 'labuta' ? 17 : 14);
+      const x = projectX(p.x, p.z) + facing * (run.characterId === 'labuta' || run.characterId === 'teo' ? 17 : 14);
       const y = projectY(p.x, p.z) + 23 + vertical * 3;
       batch.line(x, y, x + facing * (firearm ? 8 : 5), y + vertical * 4, firearm ? 2.9 : 1.2,
         firearm ? 0xffa14f : 0xd0dede, fade);
@@ -401,6 +433,12 @@ export class DesertView {
           const angle = point.age * 20, sx = Math.cos(angle), sy = Math.sin(angle);
           batch.line(x - sx * 4, y - sy * 4, x + sx * 3, y + sy * 3, 1.6, 0xb68b68);
           batch.line(x + sx * 3 - sy * 3, y + sy * 3 + sx * 3, x + sx * 3 + sy * 3, y + sy * 3 - sx * 3, 2.6, 0xffa18b);
+          continue;
+        }
+        if (shot.kind === 'silas') {
+          const roll = point.age * 30, sx = Math.cos(roll), sy = Math.sin(roll);
+          batch.line(x - sx * 5, y - sy * 5, x + sx * 5, y + sy * 5, 2.5, shot.copyColor ?? 0xd9edf1);
+          batch.line(x - sx * 5, y - sy * 5, x - sx * 1.65, y - sy * 1.65, 2.4, 0x936952);
           continue;
         }
         const trail = shot.copyColor ?? (shot.planted ? 0x9ecafa : shot.source === 'boneStorm' ? 0xf5dfb0 : color);
@@ -439,10 +477,26 @@ export class DesertView {
     for (const impact of run.impacts) {
       const x = projectX(impact.x, impact.z), y = projectY(impact.x, impact.z) + 9;
       if (!this.visible(x, y)) continue;
-      for (let i = 0; i < 5; i++) {
+      const fade = Math.max(0, 1 - impact.age * 2.9);
+      const color = impact.color ?? this.palette.sparks;
+      for (let i = 0; i < (this.renderScale < .8 ? 3 : 5); i++) {
         const a = i * TAU / 5 + impact.x;
         const r = 3 + impact.age * 41;
-        batch.rect(x + Math.cos(a) * r, y + Math.sin(a) * r, 2, 2, impact.color ?? 0xffc475, 1 - impact.age * 2.9);
+        const sx = Math.cos(a), sy = Math.sin(a);
+        batch.line(x + sx * (r - 3), y + sy * (r - 3), x + sx * r, y + sy * r, 1.6, color, fade);
+      }
+    }
+    for (const strike of run.weather.strikes ?? []) {
+      if (!strike.hit || strike.age > 1.42) continue;
+      const x = projectX(strike.x, strike.z), y = projectY(strike.x, strike.z);
+      if (!this.visible(x, y, 180)) continue;
+      const fade = clamp((1.42 - strike.age) / .22, 0, 1) * (this.preferences.reducedMotion ? .55 : 1);
+      batch.sprite('haze', x, y, 76, { anchorY: .5, height: 38, color: 0xc7b0ff, alpha: fade * .45 });
+      for (let i = 0; i < 6; i++) {
+        const before = i ? Math.sin(i * 29 + strike.x) * 16 : 0;
+        const next = Math.sin((i + 1) * 29 + strike.x) * 16;
+        batch.line(x + before, y + i * 32, x + next, y + (i + 1) * 32, 6, 0x9173ed, fade * .72);
+        batch.line(x + before, y + i * 32, x + next, y + (i + 1) * 32, 2, 0xf3eeff, fade);
       }
     }
     for (const tornado of run.tornadoes) {
@@ -456,13 +510,29 @@ export class DesertView {
     }
   }
 
-  dust(run, time) {
-    const sand = run.weather.kind === 'sand' && run.weather.remaining > 0;
+  haze(run, time) {
     const { w, h } = this.size;
-    for (let i = 0; i < (sand ? 70 : 27); i++) {
-      const x = (i * 89.7 + time * (sand ? 43 : 7)) % w - w / 2 + this.view.x;
-      const y = (i * 57.9 + time * 1.6) % h - h / 2 + this.view.y;
-      this.batch.rect(Math.round(x), Math.round(y), sand ? 3 + i % 5 : 1 + i % 3, 1, 0xffcc99, sand ? .26 : .24);
+    const storm = !run.bossEncounter.active && run.weather.remaining > 0;
+    const count = this.renderScale < .8 ? 4 : 8;
+    for (let i = 0; i < count; i++) {
+      const x = (i * 179 + time * (storm ? 20 : 4.5)) % (w + 130) - (w + 130) / 2 + this.view.x;
+      const y = (i * 87.3) % h - h / 2 + this.view.y + Math.sin(time * .3 + i) * 8;
+      this.batch.sprite('haze', x, y, 95 + i % 4 * 24, { height: 12 + i % 3 * 6,
+        anchorY: .5, color: this.palette.mist, alpha: this.stage === 'town' ? .075 : .052 });
+    }
+  }
+
+  particles(run, time) {
+    const active = !run.bossEncounter.active && run.weather.remaining > 0;
+    const sand = active && run.weather.kind === 'sand', rain = active && run.weather.kind === 'rain';
+    const { w, h } = this.size;
+    const count = Math.ceil((sand || rain ? 64 : 28) * this.renderScale);
+    for (let i = 0; i < count; i++) {
+      const x = (i * 89.7 + time * (sand ? 43 : rain ? 38 : 7)) % w - w / 2 + this.view.x;
+      const y = h / 2 - (i * 57.9 + time * (rain ? 124 : 1.6)) % h + this.view.y;
+      if (rain) this.batch.line(x - 3, y + 8 + i % 6, x, y, .85, 0xb7cee8, .3);
+      else this.batch.rect(Math.round(x), Math.round(y), sand ? 3 + i % 5 : 1 + i % 3, 1,
+        this.palette.mist, sand ? .28 : .19 + Math.sin(time * 1.4 + i) * .075);
     }
   }
 

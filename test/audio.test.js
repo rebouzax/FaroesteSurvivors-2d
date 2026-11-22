@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import clips from '../src/assets/audio/combat-foley.json' with { type: 'json' };
 import { CAMPAIGN, ENEMY_STAGE_GROUPS } from '../src/config/campaignConfig.js';
+import { PLAYABLE_STAGES } from '../src/config/playableStages.js';
 import { desertSurfaceAt } from '../src/models/DesertLayout.js';
 import { actorCue, actorHurt } from '../src/models/ActorCues.js';
 import { RunModel } from '../src/models/RunModel.js';
@@ -14,9 +15,8 @@ import { CHAMPION_CELLS, championPose } from '../src/views/ChampionAnimation.js'
 import { enemyPose } from '../src/views/EnemyAnimation.js';
 
 const stageActors = [
-  ...ENEMY_STAGE_GROUPS.desert, ...ENEMY_STAGE_GROUPS.mine,
-  ...[...CAMPAIGN.desert.bosses, ...CAMPAIGN.mine.bosses].map(boss => boss.id),
-  'treasure', 'treasureRat',
+  ...PLAYABLE_STAGES.flatMap(stage => [...ENEMY_STAGE_GROUPS[stage], ...CAMPAIGN[stage].bosses.map(boss => boss.id)]),
+  'treasure', 'treasureRat', 'treasureZombie',
 ];
 
 test('Combat bank covers every active animation with different unclipped takes and fast onsets', () => {
@@ -33,7 +33,7 @@ test('Combat bank covers every active animation with different unclipped takes a
     for (const action of ['move', 'attack', 'hurt'])
       assert.equal(clips[id + '.' + action]?.length, 2, id + '.' + action);
   const ranges = Object.values(clips).flat().sort((a, b) => a[0] - b[0]);
-  assert.ok(wav.length < 3_200_000);
+  assert.ok(wav.length < 4_100_000);
   let previous = 0;
   const fingerprints = new Set();
   for (const [start, duration] of ranges) {

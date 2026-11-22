@@ -5,13 +5,20 @@ import { t } from '../services/I18n.js';
 
 const labels = [['beasts', 'Bestas'], ['undead', 'Mortos-vivos'], ['spirits', 'Espíritos']];
 const stateLabels = { unknown: 'Desconhecido', encountered: 'Encontrado', defeated: 'Derrotado' };
-const topFramed = new Set(['skeleton', 'shadowMarshal', 'miner', 'shovelMiner', 'minerGeneral']);
+const topFramed = new Set(['skeleton', 'shadowMarshal', 'miner', 'shovelMiner', 'minerGeneral', 'boneSinger', 'zombieDeputy']);
 const titleOf = (entry, state) => state === 'unknown' ? stateLabels.unknown : t('pt', (entry.boss ? 'boss.' : 'enemy.') + entry.id);
 const statLabels = [['hp', 'Vida'], ['damage', 'Dano'], ['armor', 'Armadura'], ['speed', 'Velocidade']];
-const mineLore = {
+const creatureLore = {
   mineSpider: 'As aranhas das galerias avançam pelos lados. O brilho das pedras nas costas denuncia sua posição.',
   mineSkull: 'A chama azul paira nas galerias e dispara orbes à distância.',
   blindCrawler: 'O rato não enxerga, mas fareja quem passa. Depois de se encolher, investe em linha reta.',
+  wraith: 'A aparição contorna os quarteirões e se aproxima pelos flancos.',
+  townZombie: 'Os mortos saíram do saloon e vagam pela rua principal.',
+  townGhoul: 'O foragido encolhe o corpo antes de disparar em linha reta.',
+  headlessOutlaw: 'O pistoleiro procura uma brecha entre os prédios para arremessar seu machado.',
+  boneHound: 'A fera de ossos se abaixa antes de investir. Use as construções como cobertura.',
+  boneSinger: 'O canto do ossário chama outros mortos. Desconfie das saídas vazias durante a invocação.',
+  zombieDeputy: 'O Delegado mantém distância para atirar. Os disparos da escopeta se espalham à frente dele.',
 };
 
 function portrait({ id, stage, tile }, unknown) {
@@ -48,7 +55,7 @@ export function bestiaryDossier(discoveries, id) {
   const state = discoveryState(entry, discoveries);
   const title = titleOf(entry, state);
   const { stats, pattern, weakness, counter } = bestiaryKnowledge(entry, state);
-  const lore = state === 'defeated' ? mineLore[id] ?? t('pt', 'lore.' + id)
+  const lore = state === 'defeated' ? creatureLore[id] ?? t('pt', 'lore.' + id)
     : state === 'encountered' ? t('pt', 'encounteredBoss')
     : entry.boss ? 'Encontre este chefe para revelar seu nome e seu padrão de ataque.'
     : 'Derrote esta criatura para revelar sua ficha.';

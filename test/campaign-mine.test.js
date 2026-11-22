@@ -33,7 +33,7 @@ test('The second stage needs the desert story clear and awards all three mine ch
 
 test('Stage introductions and ordinary populations follow the timed waves', () => {
   const system = new EnemySystem();
-  for (const [map, opening] of [['desert', 'bat'], ['mine', 'miner']]) {
+  for (const [map, opening] of [['desert', 'bat'], ['mine', 'miner'], ['town', 'wraith']]) {
     const run = new RunModel(() => .75, 0, {}, { mapId: map });
     const spawned = [];
     system.spawn = (state, type) => {
